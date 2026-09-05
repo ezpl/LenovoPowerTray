@@ -71,22 +71,25 @@ internal static class LidDashboardPolicy
     /// The line under the title. Off names what applies instead, like the sections beside it: the
     /// delay being off does not mean nothing happens, it means Windows handles the lid again. The two
     /// conditions are alternatives, so with both set the line says which arrives first decides, and
-    /// with neither set it says the machine sleeps straight away.
+    /// with neither set it says the machine sleeps straight away. The lock is named only when it is
+    /// off: locking is the default, so silence already reads as locked, and spelling it out on every
+    /// branch would run the busiest one past the badge's two-line budget.
     /// </summary>
     public static string Describe(bool enabled, bool timeEnabled, int minutes,
-                                  bool dischargeEnabled, int targetPercent)
+                                  bool dischargeEnabled, int targetPercent, bool lockOnClose)
     {
         if (!enabled) return "Off — the Windows lid setting applies";
 
         string time  = $"{ShortLabel(Clamp(minutes))} after the lid closes";
         string level = $"at {LevelLabel(targetPercent)} battery";
+        string lead  = lockOnClose ? "On" : "On, unlocked";
 
         return (timeEnabled, dischargeEnabled) switch
         {
-            (true,  true ) => $"On — sleeps {time}, or {level}, whichever comes first",
-            (true,  false) => $"On — sleeps {time}",
-            (false, true ) => $"On — sleeps {level}",
-            (false, false) => "On — sleeps as soon as the lid closes",
+            (true,  true ) => $"{lead} — sleeps {time}, or {level}, whichever comes first",
+            (true,  false) => $"{lead} — sleeps {time}",
+            (false, true ) => $"{lead} — sleeps {level}",
+            (false, false) => $"{lead} — sleeps as soon as the lid closes",
         };
     }
 

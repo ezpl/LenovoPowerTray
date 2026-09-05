@@ -370,8 +370,9 @@
                 </Grid>
             </Border>
 
-            <!-- Smart Standby decides how the machine sleeps; this decides when. Only the switch and
-                 the delay live here — locking at lid close stays in Settings. -->
+            <!-- Smart Standby decides how the machine sleeps; this decides when. The delay and
+                 battery-level switches live here as chips; the lock-at-close switch stays in
+                 Settings, though its state shows in the line below whenever it is off. -->
             <Border x:Name="LidDelayBadge"
                     CornerRadius="6"
                     Padding="10,5">
@@ -396,7 +397,7 @@
                                                        FontSize="13"
                                                        TextWrapping="Wrap"/>
                                             <TextBlock TextWrapping="Wrap" FontSize="12" Opacity="0.85">
-                                                Turning this on sets the Windows lid-close action to "Do nothing" and runs a sleep timer instead; the Windows setting is put back when it is turned off. Opening the lid before the delay is up cancels it, and a running keep-awake session holds the sleep off entirely. Pick a delay from the row below — locking the computer at lid close, and delays other than these, are in Settings.
+                                                Turning this on sets the Windows lid-close action to "Do nothing" and waits before sleeping instead; the Windows setting is put back when it is turned off. Opening the lid before that cancels it, and a running keep-awake session holds the sleep off entirely. Pick a delay or a battery level below — whichever is reached first decides when it sleeps. The computer also locks as the lid closes by default; that switch, and the saved delays and battery levels themselves, are on the Settings page.
                                             </TextBlock>
                                         </StackPanel>
                                     </ToolTip>

@@ -1090,7 +1090,8 @@ public sealed partial class DashboardWindow : Window
         SetFeatureBadge(LidDelayBadge, LidDelayToggle, s.LidDelayEnabled);
         LidDelayDetailText.Text = LidDashboardPolicy.Describe(s.LidDelayEnabled, s.LidDelayTimeEnabled,
                                                              s.LidDelayMinutes,
-                                                             s.LidDischargeEnabled, s.LidDischargeTargetPercent);
+                                                             s.LidDischargeEnabled, s.LidDischargeTargetPercent,
+                                                             s.LidDelayLockOnClose);
 
         var delays = LidDashboardPolicy.DelayChips(s.LidDelayPresets.Select(p => p.Minutes), s.LidDelayMinutes);
         var levels = LidDashboardPolicy.LevelChips(s.LidDischargePresets.Select(t => t.Percent),

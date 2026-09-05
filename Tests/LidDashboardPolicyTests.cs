@@ -148,7 +148,7 @@ public class LidDashboardPolicyTests
     {
         Assert.Equal("On — sleeps 10m after the lid closes",
             LidDashboardPolicy.Describe(enabled: true, timeEnabled: true, 10,
-                                        dischargeEnabled: false, targetPercent: 50));
+                                        dischargeEnabled: false, targetPercent: 50, lockOnClose: true));
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public class LidDashboardPolicyTests
         // one also spell out.
         Assert.Equal("Off — the Windows lid setting applies",
             LidDashboardPolicy.Describe(enabled: false, timeEnabled: true, 10,
-                                        dischargeEnabled: false, targetPercent: 50));
+                                        dischargeEnabled: false, targetPercent: 50, lockOnClose: true));
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public class LidDashboardPolicyTests
     {
         Assert.Equal("On — sleeps 1m after the lid closes",
             LidDashboardPolicy.Describe(enabled: true, timeEnabled: true, 0,
-                                        dischargeEnabled: false, targetPercent: 50));
+                                        dischargeEnabled: false, targetPercent: 50, lockOnClose: true));
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class LidDashboardPolicyTests
         // a wait the machine no longer runs.
         Assert.Equal("On — sleeps 10m after the lid closes, or at 40 % battery, whichever comes first",
             LidDashboardPolicy.Describe(enabled: true, timeEnabled: true, 10,
-                                        dischargeEnabled: true, targetPercent: 40));
+                                        dischargeEnabled: true, targetPercent: 40, lockOnClose: true));
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public class LidDashboardPolicyTests
     {
         Assert.Equal("On — sleeps at 40 % battery",
             LidDashboardPolicy.Describe(enabled: true, timeEnabled: false, 10,
-                                        dischargeEnabled: true, targetPercent: 40));
+                                        dischargeEnabled: true, targetPercent: 40, lockOnClose: true));
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class LidDashboardPolicyTests
         // Nothing left to wait for, which is what the wait does rather than holding indefinitely.
         Assert.Equal("On — sleeps as soon as the lid closes",
             LidDashboardPolicy.Describe(enabled: true, timeEnabled: false, 10,
-                                        dischargeEnabled: false, targetPercent: 40));
+                                        dischargeEnabled: false, targetPercent: 40, lockOnClose: true));
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public class LidDashboardPolicyTests
     {
         Assert.Equal("On — sleeps at 95 % battery",
             LidDashboardPolicy.Describe(enabled: true, timeEnabled: false, 10,
-                                        dischargeEnabled: true, targetPercent: 100));
+                                        dischargeEnabled: true, targetPercent: 100, lockOnClose: true));
     }
 
     [Fact]
@@ -210,7 +210,34 @@ public class LidDashboardPolicyTests
         // With lid handling off the app has handed the lid back to Windows, target or no target.
         Assert.Equal("Off — the Windows lid setting applies",
             LidDashboardPolicy.Describe(enabled: false, timeEnabled: true, 10,
-                                        dischargeEnabled: true, targetPercent: 40));
+                                        dischargeEnabled: true, targetPercent: 40, lockOnClose: true));
+    }
+
+    [Fact]
+    public void Describe_UnlockedWithTheClockAlone_NamesTheLockState()
+    {
+        // Locking is the default, so it stays unnamed while on; off is the deviation worth a word.
+        Assert.Equal("On, unlocked — sleeps 10m after the lid closes",
+            LidDashboardPolicy.Describe(enabled: true, timeEnabled: true, 10,
+                                        dischargeEnabled: false, targetPercent: 50, lockOnClose: false));
+    }
+
+    [Fact]
+    public void Describe_UnlockedWithBothConditions_StillFitsTheLockStateIn()
+    {
+        Assert.Equal(
+            "On, unlocked — sleeps 10m after the lid closes, or at 40 % battery, whichever comes first",
+            LidDashboardPolicy.Describe(enabled: true, timeEnabled: true, 10,
+                                        dischargeEnabled: true, targetPercent: 40, lockOnClose: false));
+    }
+
+    [Fact]
+    public void Describe_OffAndUnlocked_StillNamesTheWindowsSetting()
+    {
+        // The lock setting is parked, not applied, once lid handling itself is off.
+        Assert.Equal("Off — the Windows lid setting applies",
+            LidDashboardPolicy.Describe(enabled: false, timeEnabled: true, 10,
+                                        dischargeEnabled: false, targetPercent: 50, lockOnClose: false));
     }
 
     // ActiveChip and ActiveLevelChip
