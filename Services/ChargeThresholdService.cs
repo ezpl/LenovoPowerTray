@@ -15,8 +15,26 @@ internal static class ChargeThresholdService
     internal static bool SetEnabled(bool enable) =>
         VendorCatalog.Active.ChargeThreshold.SetEnabled(enable);
 
-    internal static bool SetThresholds(int start, int stop) =>
-        VendorCatalog.Active.ChargeThreshold.SetThresholds(start, stop);
+    /// <summary>The sole caller of every vendor's <c>SetThresholds</c> (see
+    /// <c>LenovoChargeThreshold</c>), so it is where a thrown native exception is told apart from a
+    /// clean rejection and both, plus the success case, are recorded — a silent write and a failed
+    /// one otherwise look identical to the user afterwards.</summary>
+    internal static bool SetThresholds(int start, int stop)
+    {
+        try
+        {
+            bool ok = VendorCatalog.Active.ChargeThreshold.SetThresholds(start, stop);
+            AppLog.Info(ok
+                ? $"ChargeThreshold: wrote {start}/{stop}."
+                : $"ChargeThreshold: write {start}/{stop} rejected by the device.");
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error($"ChargeThresholdService.SetThresholds({start}, {stop})", ex);
+            return false;
+        }
+    }
 
     /// <summary>Modes offered instead of percentages — empty on Lenovo, three on HP. Mutually
     /// exclusive with <see cref="SupportsNumericThresholds"/>.</summary>

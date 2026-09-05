@@ -74,7 +74,12 @@ internal sealed class LenovoChargeThreshold : IChargeThresholdProvider
     public bool SetThresholds(int start, int stop)
     {
         if (start < 1 || stop > 100 || start >= stop) return false;
-        try { return LenSetChargeThreshold(PrimaryBattery, start, stop) == 0; }
-        catch { return false; }
+
+        // A thrown exception (DllNotFoundException / EntryPointNotFoundException when the native
+        // bridge isn't deployed, or a fault from the RPC bridge itself) is left to propagate rather
+        // than folded into a bare `false` here: this module has no logging dependency of its own
+        // (see ChargeKeeper.Vendors.Lenovo.csproj — only Abstractions), so ChargeThresholdService,
+        // its sole caller, is where the exception is told apart from a clean rejection and recorded.
+        return LenSetChargeThreshold(PrimaryBattery, start, stop) == 0;
     }
 }

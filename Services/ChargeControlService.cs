@@ -56,6 +56,9 @@ internal static class ChargeControlService
         }
 
         bool ok = Primitives.ApplyExplicitThresholds(preset.Start, preset.Stop);
+        AppLog.Info(ok
+            ? $"ChargeControl: preset \"{preset.Name}\" applied ({preset.Start}/{preset.Stop})."
+            : $"ChargeControl: preset \"{preset.Name}\" write rejected by the device ({preset.Start}/{preset.Stop}).");
         StateChanged?.Invoke();
         return ok;
     }
