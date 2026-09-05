@@ -9,6 +9,21 @@ application, not what moved in the code. A change carrying no issue collapses in
 line, or is left out. Newest version first; the heading is the version alone, exactly as it appears
 in `ChargeKeeper.csproj`.
 
+## 1.43.0
+
+- #140 The Lid delay badge on the dashboard now names the lock-at-close setting, and its
+  explanation covers the battery target as well as the timer.
+- #134 The tray menu's Settings submenu now picks the icon style directly, with the active style
+  marked, instead of requiring a trip to the Settings window.
+- #139 The installer's "still running" page now offers Retry alongside Cancel, so closing the
+  application from its notification-area icon does not mean starting the install over.
+- #149 Choosing Update from the tray menu now installs without the setup wizard appearing, and a
+  failed update is reported at the next start instead of passing silently.
+- #159 A Smart Charge threshold write now records its outcome in the log, so a preset that does
+  not take effect can be diagnosed.
+- #152 The first strings move to a translatable resource file, a pilot covering one window.
+- #161 "Check for updates" is now on the About page as well as the tray menu.
+
 ## 1.42.1
 
 - #163 Appearance now holds every visual setting — the tray percentage icon and the three history-
