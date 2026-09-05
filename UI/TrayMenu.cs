@@ -15,6 +15,7 @@ namespace ChargeKeeper.UI;
 internal sealed class TrayMenu
 {
     private readonly List<(ToggleMenuFlyoutItem Item, IToggleFeature Feature)> _toggles = [];
+    private readonly List<(ToggleMenuFlyoutItem Item, TrayIconMode Mode)> _iconModeItems = [];
 
     private MenuFlyoutItem? _updateItem;
     private AboutWindow?    _aboutWindow;
@@ -49,6 +50,7 @@ internal sealed class TrayMenu
         }
 
         Flyout.Items.Add(new MenuFlyoutItem { Text = "Settings…", Command = new RelayCommand(_onOpenSettings) });
+        Flyout.Items.Add(BuildIconStyleSubmenu());
 
         Flyout.Items.Add(new MenuFlyoutSeparator());
         Flyout.Items.Add(new MenuFlyoutItem
@@ -73,6 +75,40 @@ internal sealed class TrayMenu
         // tray icon exists. Seeds the first snapshot RefreshState re-applies.
         QueueRefresh();
     }
+
+    /// <summary>Builds the "Icon style" submenu: one checked item per <see cref="TrayIconMode"/>,
+    /// reading <see cref="TrayIconModeLabels"/> rather than restating the strings.</summary>
+    private MenuFlyoutSubItem BuildIconStyleSubmenu()
+    {
+        var sub = new MenuFlyoutSubItem { Text = "Icon style" };
+        foreach (var mode in Enum.GetValues<TrayIconMode>())
+        {
+            var item = new ToggleMenuFlyoutItem { Text = TrayIconModeLabels.For(mode) };
+            item.Command = new RelayCommand(() => SelectIconMode(mode));
+            _iconModeItems.Add((item, mode));
+            sub.Items.Add(item);
+        }
+        return sub;
+    }
+
+    /// <summary>Applies a style chosen from the tray menu's own submenu — the same write
+    /// <c>OnIconModeChanged</c> makes from Settings.</summary>
+    private void SelectIconMode(TrayIconMode mode) => Task.Run(() =>
+    {
+        try
+        {
+            SettingsService.ApplyIconModeChoice(mode);
+            _onIconModeChanged();   // repaints the tray icon, the same callback a Settings change uses
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("TrayMenu.SelectIconMode", ex);
+        }
+        finally
+        {
+            QueueRefresh();   // funnel: mutate → refresh, success or not — updates the check marks
+        }
+    });
 
     /// <summary>Inserts or updates an "Update available" item at the top of the menu.</summary>
     public void SetUpdateBadge(string version)
@@ -138,7 +174,8 @@ internal sealed class TrayMenu
     /// producer (may perform RPC, any thread); <see cref="ApplyState"/> the only consumer (UI thread).
     /// </summary>
     private sealed record MenuState(
-        IReadOnlyList<(bool Available, bool Enabled)> Features);   // aligned with _toggles
+        IReadOnlyList<(bool Available, bool Enabled)> Features,   // aligned with _toggles
+        TrayIconMode IconMode);                                   // aligned with _iconModeItems
 
     private MenuState ReadState()
     {
@@ -151,7 +188,7 @@ internal sealed class TrayMenu
                                                 fallback: (Available: true, Enabled: false));
             features[i] = (available, available && enabled);
         }
-        return new MenuState(features);
+        return new MenuState(features, SettingsService.Read(s => s.IconMode));
     }
 
     // The most recent snapshot, re-applied by RefreshState. UI thread only, so no synchronisation.
@@ -166,6 +203,8 @@ internal sealed class TrayMenu
             _toggles[i].Item.IsEnabled = available;
             _toggles[i].Item.IsChecked = enabled;
         }
+        foreach (var (item, mode) in _iconModeItems)
+            item.IsChecked = mode == state.IconMode;
     }
 
     private void ApplyPreset(ThresholdPreset preset) => RunApplyPreset(preset.Name);

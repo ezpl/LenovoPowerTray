@@ -34,6 +34,19 @@ internal sealed record LidDelayPreset(int Minutes, string? Name = null);
 // this enum by position, so the two orders have to stay in lockstep.
 internal enum TrayIconMode { Arc, Numeric, BrandMark }
 
+/// <summary>The label shown for each <see cref="TrayIconMode"/>, in enum order — the table the tray
+/// menu's style submenu reads rather than restating the strings a third time alongside the Settings
+/// XAML and <c>Tests/TrayIconStyleTests.cs</c>.</summary>
+internal static class TrayIconModeLabels
+{
+    // "Battery fill" (#132) names what the drawing looks like; the enum member behind it is still
+    // BrandMark, which is what is persisted and what the MQTT select advertises, so the two are
+    // allowed to disagree.
+    private static readonly string[] _labels = ["Arc gauge", "Numeric %", "Battery fill"];
+
+    public static string For(TrayIconMode mode) => _labels[(int)mode];
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 internal enum GraphTimeScale { FifteenMinutes, OneHour, SixHours, TwelveHours, OneDay, OneWeek, FourteenDays }
 
@@ -395,6 +408,17 @@ internal static class SettingsService
         Changed?.Invoke();
         ChangeCommitted?.Invoke(new SettingsChange(SettingsChangeClassifier.IsMaterial(before, after)));
     }
+
+    /// <summary>Writes a tray icon style chosen from the UI — the Settings dropdown or the tray
+    /// menu's own style submenu. Numeric % already puts the reading in the tray, so choosing it also
+    /// switches off <see cref="AppSettings.ShowPercentageIcon"/>: left stored as on, the duplicate
+    /// would come back the moment another style was chosen, which is not what selecting Numeric %
+    /// asked for.</summary>
+    public static void ApplyIconModeChoice(TrayIconMode mode) => Update(s =>
+    {
+        s.IconMode = mode;
+        if (mode == TrayIconMode.Numeric) s.ShowPercentageIcon = false;
+    });
 
     /// <summary>Raised after any committed change, whatever moved. Subscribe here only where every
     /// change genuinely counts; anything redoing an outward surface belongs on

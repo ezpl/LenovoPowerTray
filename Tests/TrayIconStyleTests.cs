@@ -6,10 +6,11 @@ using Xunit;
 
 namespace ChargeKeeper.Tests;
 
-// The tray icon style list exists in four places that must agree: the TrayIconMode enum, the
-// Settings ComboBox (cast to and from the enum BY POSITION), the MQTT select's advertised options
-// and the command parser. A member inserted rather than appended silently remaps every saved
-// setting after it, and nothing on screen says so.
+// The tray icon style list exists in five places that must agree: the TrayIconMode enum, the
+// Settings ComboBox (cast to and from the enum BY POSITION), the MQTT select's advertised options,
+// the command parser and the tray menu's own style submenu — the last reads TrayIconModeLabels
+// rather than restating the strings a third time. A member inserted rather than appended silently
+// remaps every saved setting after it, and nothing on screen says so.
 public class TrayIconStyleTests
 {
     // The ComboBox label for each enum member, in enum order. This table is the contract the
@@ -50,6 +51,13 @@ public class TrayIconStyleTests
     [Fact]
     public void MqttSelectOptions_MatchTheEnumOrder() =>
         Assert.Equal(Styles.Select(s => s.Mode), MqttEntityCatalog.IconModeOptions);
+
+    [Fact]
+    public void TrayMenuSubmenuLabels_MatchTheEnumOrder() =>
+        // The tray menu's "Icon style" submenu builds its items from this table — see
+        // UI/TrayMenu.cs's BuildIconStyleSubmenu.
+        Assert.Equal(Styles.Select(s => s.Label),
+                      Enum.GetValues<TrayIconMode>().Select(TrayIconModeLabels.For));
 
     // The brand mark's interior band, which the charge fill and (from #113) the threshold marks are
     // placed on. The canonical values reproduce brand\chargekeeper-icon.svg's fixed geometry.
