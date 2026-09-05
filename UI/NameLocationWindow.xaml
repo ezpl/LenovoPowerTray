@@ -17,7 +17,7 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
-                   Text="Name this network location"
+                   x:Uid="NameLocationTitle"
                    FontSize="13" FontWeight="SemiBold"
                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
 
@@ -34,8 +34,8 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Button x:Name="CancelBtn" Grid.Column="0" Content="Cancel" HorizontalAlignment="Stretch"/>
-            <Button x:Name="OkBtn"     Grid.Column="1" Content="Save"   HorizontalAlignment="Stretch"/>
+            <Button x:Name="CancelBtn" x:Uid="NameLocationCancelButton" Grid.Column="0" HorizontalAlignment="Stretch"/>
+            <Button x:Name="OkBtn"     x:Uid="NameLocationSaveButton"   Grid.Column="1" HorizontalAlignment="Stretch"/>
         </Grid>
     </Grid>
 </Window>

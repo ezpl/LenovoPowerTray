@@ -183,6 +183,15 @@
     <EmbeddedResource Include="RELEASE-NOTES.md" LogicalName="ChargeKeeper.RELEASE-NOTES.md" />
   </ItemGroup>
 
+  <!-- Application strings, resolved through MRT Core via x:Uid — see LOCALISATION.md. .resw rather
+       than .resx: x:Uid support, one culture-resolution system shared with the rest of WinUI, no
+       satellite-assembly installer weight. Requires no build-configuration change beyond this item;
+       verified with a throwaway project carrying the identical WindowsPackageType=None property
+       set. One language today (#152); a second is #164. -->
+  <ItemGroup>
+    <PRIResource Include="Strings\en-GB\Resources.resw" />
+  </ItemGroup>
+
   <!--
     Native bridge to the Lenovo Power Manager RPC interface (Smart Charge thresholds).
     Built separately via native\build.cmd; copied next to the app so the P/Invoke in
