@@ -335,7 +335,8 @@ internal sealed class TrayMenu
                 {
                     case NativeMethods.UpdateAction.Update:
                         NativeMethods.Info(
-                            $"Downloading v{outcome.LatestVersion}...\n\nThe installer will launch automatically when ready.",
+                            $"Downloading v{outcome.LatestVersion}...\n\nThe update then installs by itself: " +
+                            $"{AppName} closes, updates and starts again.",
                             AppName);
                         _ = Task.Run(async () =>
                         {
@@ -359,8 +360,20 @@ internal sealed class TrayMenu
                                     return;
                                 }
 
-                                // Exit right after: a process the installer has to kill needs UAC.
-                                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+                                // Unattended: this update was agreed to in the dialog above, so
+                                // there is no wizard to advance. The record goes down first —
+                                // Setup replaces files this process holds, so the process is gone
+                                // before an outcome exists and its successor is what reports one.
+                                UnattendedUpdate.Record(outcome.LatestVersion!);
+                                var start = new ProcessStartInfo(path) { UseShellExecute = true };
+                                foreach (string argument in
+                                         UnattendedUpdate.Arguments(UnattendedUpdate.InstallerLogPath))
+                                    start.ArgumentList.Add(argument);
+                                Process.Start(start);
+                                // Exit at once. Setup waits for this process to go rather than
+                                // ending it, so the sooner it goes the fewer seconds the update
+                                // costs — and nothing here waits on Setup: the wait would hold the
+                                // very files Setup is about to replace.
                                 Flyout.DispatcherQueue?.TryEnqueue(() =>
                                 {
                                     try { _onExit(); }

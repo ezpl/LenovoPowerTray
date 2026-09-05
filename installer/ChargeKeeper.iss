@@ -229,17 +229,28 @@ begin
         and (CompareText(ExtractFileName(RemoveBackslashUnlessRoot(Dir)), '{#LegacyDirName}') = 0);
 end;
 
+// True when the application started this run for its own update. That run is silent like a winget
+// or scheduled one and cannot be told from them by WizardSilent, yet it differs in every way that
+// matters here: a user asked for it, the application is elevated and exiting for it, and it expects
+// to be started again afterwards. The switch is passed by UnattendedUpdate in the application; the
+// pair is pinned by the test UnattendedUpdateTests.
+function StartedByTheApplication(): Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATEFROMAPP|0}') = '1';
+end;
+
 function InitializeSetup(): Boolean;
 begin
   PreviousAppDir := '';
   RegQueryStringValue(HKCU, UninstallKey, 'Inno Setup: App Path', PreviousAppDir);
 
-  // Interactive runs only. Re-pointing an RL HIGHEST task needs elevation, and a silent run has
-  // nobody to answer the consent prompt — the same stance this file already takes for the
-  // Lenovo-era task cleanup. A silent upgrade installs where it already is and leaves the move to
-  // the next interactive run; the app's own update route passes no silent switch, so that route
-  // migrates (and, being started from the elevated app, raises no prompt at all).
-  MigratingFromLegacy := IsLegacyDir(PreviousAppDir) and not WizardSilent();
+  // Interactive runs, and the application's own update. Re-pointing an RL HIGHEST task needs
+  // elevation, and an unattended run has nobody to answer the consent prompt — the same stance this
+  // file already takes for the Lenovo-era task cleanup. A silent upgrade installs where it already
+  // is and leaves the move to the next interactive run. The application's own route is silent too,
+  // but it is started from the elevated application and raises no prompt at all, so it migrates.
+  MigratingFromLegacy := IsLegacyDir(PreviousAppDir)
+                     and ((not WizardSilent()) or StartedByTheApplication());
   Result := True;
 end;
 
@@ -406,6 +417,41 @@ begin
   end;
 end;
 
+// ---------------------------------------------------------------------------
+// The application's own update. Unattended by request: it was agreed to in the application's update
+// dialog, so no wizard is shown and no message box can be answered.
+// ---------------------------------------------------------------------------
+
+// The application queues its own exit as it starts this run, so that exit is still in flight when
+// Setup gets here. Waiting for it is what keeps the update unattended: the termination below is
+// elevated, and neither its consent prompt nor the refusal further down has anybody to answer it.
+// Roughly sixteen seconds, then the ordinary path takes over — a process still present after that
+// is stuck rather than closing.
+procedure WaitForTheStartingApplicationToExit();
+var
+  i: Integer;
+begin
+  if not StartedByTheApplication() then exit;
+  for i := 1 to 8 do
+    if WaitForProcessToExit('{#AppExe}') then exit;
+end;
+
+// Where a refusal is stated, since an unattended run states it nowhere else: the message box is
+// suppressed and the application that asked for the update has exited. The next start reads this
+// beside its own record of the attempt and reports both. The file name must stay equal to
+// UnattendedUpdate.RefusalFileName in the application; the test UnattendedUpdateTests pins the pair.
+// ASCII only — see the note in [Messages].
+procedure RecordTheRefusal();
+var
+  Dir: string;
+begin
+  Dir := ExpandConstant('{userappdata}\{#AppName}');
+  if ForceDirectories(Dir) then
+    SaveStringToFile(Dir + '\update-refused.txt',
+                     'Setup installed nothing: {#AppName} was still running when it started.',
+                     False);
+end;
+
 function LegacyTaskExists(): Boolean;
 var
   ResultCode: Integer;
@@ -533,6 +579,11 @@ begin
   // (the app re-registers it with power-safe XML at first startup). An interactive install
   // also elevates when only stale legacy tasks exist; a silent one never adds a prompt.
   // {app} is already resolved here — the directory page runs well before this step.
+  //
+  // The application's own update comes through here with its exit already requested, so that exit
+  // is waited for FIRST — before anything reads the process or elevates to end it. Everything below
+  // then sees the ordinary case of an application that is simply not running.
+  WaitForTheStartingApplicationToExit();
   Result           := '';
   WasRunning       := AppIsRunning();
   LegacyWasRunning := ProcessIsRunning('{#LegacyExe}');
@@ -577,6 +628,11 @@ begin
   Result := ConfirmProcessHasExited('{#AppExe}');
   if Result = '' then
     Result := ConfirmProcessHasExited('{#LegacyExe}');
+
+  // Setup stops here on a non-empty result, and in an unattended run it stops showing nothing at
+  // all. Leave the reason on disk where the next start reads it, so the one failure this flow can
+  // have is stated to somebody rather than only counted in an exit code nothing is left to read.
+  if (Result <> '') and StartedByTheApplication() then RecordTheRefusal();
 end;
 
 // The re-point script. It rewrites each exported definition so that ONLY the directory changes —
@@ -737,6 +793,15 @@ begin
     if not WizardSilent() then
       // Interactive install: launch after task creation so a freshly-created startup task
       // is used for a prompt-free launch.
+      LaunchApp()
+    else if StartedByTheApplication() then
+      // The application asked for this update and closed itself for it, so it is put back — and
+      // unconditionally, unlike the branch below. WasRunning is False here by design (the exit is
+      // waited for in PrepareToInstall rather than forced), and gating on the AutoStart task would
+      // answer a user's own Update with the application simply gone. LaunchApp prefers that task
+      // where it exists and otherwise starts the application directly, which costs at most the one
+      // consent prompt the application always needs — and none at all when Setup inherited the
+      // elevated token of the application that started it.
       LaunchApp()
     else if WasRunning and ScheduledTaskExists() then
       // Silent upgrade (winget / AutoUpdate task) that killed a running instance: restart it

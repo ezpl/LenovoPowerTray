@@ -187,6 +187,12 @@ Updates come from GitHub Releases, over the same path as the tray menu's **Check
 app asks 30 seconds after start and once every 24 hours while it runs. A downloaded installer is
 refused unless its digest is intact, a signature is present and the signer is `CN=ZeroZero Software`.
 
+An update accepted from the tray menu installs **unattended** — no wizard, no page to advance. The
+app closes, the installer runs showing a progress window only, and the app starts again on the new
+version and reports what changed. It does not wait on the installer: waiting would hold the very
+files the installer replaces. An update that does not complete is stated the next time the app
+starts, alongside the installer's own log at `%AppData%\ChargeKeeper\update-install.log`.
+
 An installer carrying the older `ChargeKeeper AutoUpdate` logon task removes it on install: that task
 ran `winget upgrade`, and the package is not in a winget source.
 

@@ -286,6 +286,9 @@ public partial class App : Application
         StartHistorySampling();
         StartPerformanceSampling();
         ScheduleUpdateCheck();
+        // Before the "What's new" report: an update that landed is reported by that window, and one
+        // that did not must not be followed by notes for a version this is not.
+        ReportTheOutcomeOfAnUnattendedUpdate();
         ReportWhatsNewIfTheVersionMoved();
         // Also here, not only on resume: a machine slept from a bag may be restarted rather than
         // resumed, and the resume notification then never arrives.
@@ -1081,6 +1084,49 @@ public partial class App : Application
         _percentageIcon.Icon    = next;
         _currentPercentageIcon  = next;
         previous?.Dispose();
+    }
+
+    /// <summary>
+    /// States the outcome of an update the previous version started for itself. That version could
+    /// not report one: Setup installs unattended over the files it held, so it was gone before an
+    /// outcome existed. This start is the report — the running version against the one the update
+    /// was for, which is evidence the installer's exit code could not have been.
+    /// </summary>
+    /// <remarks>A landed update says nothing here; the "What's new" window below is its report.
+    /// Only a failure is stated outright, because nothing else states it — the installer's own
+    /// message is suppressed in an unattended run by design.</remarks>
+    private void ReportTheOutcomeOfAnUnattendedUpdate()
+    {
+        try
+        {
+            var handover = UnattendedUpdate.Read();
+            if (handover is null) return;
+
+            string running = AppInfo.Version;
+            var verdict = UnattendedUpdate.VerdictFor(handover.TargetVersion, running);
+
+            if (verdict == UpdateVerdict.DidNotComplete)
+            {
+                string text = UnattendedUpdate.DidNotCompleteMessage(
+                    handover.TargetVersion, running, UnattendedUpdate.ReadRefusal(),
+                    UnattendedUpdate.InstallerLogPath);
+                AppLog.Info($"Update: v{handover.TargetVersion} did not install; still v{running}.");
+                // Off the start-up path: MessageBoxW blocks its own thread until it is dismissed.
+                Task.Run(() => NativeMethods.Warn(text, AppInfo.Name));
+            }
+            else if (verdict == UpdateVerdict.Installed)
+            {
+                AppLog.Info($"Update: v{handover.TargetVersion} installed and started.");
+            }
+
+            // Once reported, never again: the record is one attempt, not a standing state.
+            UnattendedUpdate.Clear();
+        }
+        catch (Exception ex)
+        {
+            // A report is not worth a failed start-up.
+            AppLog.Error("ReportTheOutcomeOfAnUnattendedUpdate", ex);
+        }
     }
 
     /// <summary>
