@@ -333,6 +333,79 @@ begin
   Result := ProcessIsRunning('{#AppExe}');
 end;
 
+// ---------------------------------------------------------------------------
+// Retry block. Self-contained on purpose: a presence poll, an elevated termination attempt and the
+// loop around them, every one of them named by executable, so another requireAdministrator
+// single-instance installer can lift the three routines whole. Nothing beyond {#AppName} and
+// {#AppExe} is baked in; the legacy executable and the legacy tasks stay outside it.
+// ---------------------------------------------------------------------------
+
+// True once ExeName is gone. taskkill returns as soon as termination is REQUESTED, and the consent
+// prompt behind it can be declined outright, so presence is polled rather than assumed.
+function WaitForProcessToExit(const ExeName: string): Boolean;
+var
+  i: Integer;
+begin
+  for i := 1 to 10 do
+  begin
+    if not ProcessIsRunning(ExeName) then
+    begin
+      Result := True;
+      exit;
+    end;
+    Sleep(200);
+  end;
+  Result := False;
+end;
+
+// One elevated attempt at ending ExeName. Setup runs PrivilegesRequired=lowest while the
+// application is requireAdministrator, so an unelevated taskkill is refused with "Access is denied".
+procedure StopProcessElevated(const ExeName: string);
+var
+  ResultCode: Integer;
+begin
+  ShellExec('runas', ExpandConstant('{cmd}'), '/C taskkill /F /IM "' + ExeName + '"',
+            '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// Empty once ExeName is gone, otherwise the message Setup stops on. PrepareToInstall's return value
+// is terminal — Setup does not re-enter the callback, and the Preparing to Install page carries no
+// Retry control of its own — so the retry happens here, inside the callback, before it returns.
+// Retry re-tests presence and only then re-attempts the kill, so an application exited from its own
+// icon raises no second consent prompt.
+//
+// A silent run has nobody to answer, so it takes the terminal message immediately: WizardSilent
+// covers /SILENT, where Inno Setup still displays error boxes and a modal prompt would orphan
+// itself behind no wizard, and the IDCANCEL default covers /SUPPRESSMSGBOXES. Silent behaviour is
+// therefore exactly what it was. The two conditions are tested separately rather than in one
+// expression, because Pascal Script does not guarantee short-circuit evaluation.
+//
+// ASCII only in both strings — see the note in [Messages].
+function ConfirmProcessHasExited(const ExeName: string): String;
+var
+  Answer: Integer;
+begin
+  Result := '';
+  while not WaitForProcessToExit(ExeName) do
+  begin
+    Answer := IDCANCEL;
+    if not WizardSilent() then
+      Answer := SuppressibleMsgBox(
+        '{#AppName} is still running, so its files cannot be replaced.' + #13#10#13#10
+        + 'Exit it from its icon in the notification area (the system tray, next to the clock), '
+        + 'then choose Retry.',
+        mbError, MB_RETRYCANCEL, IDCANCEL);
+    if Answer <> IDRETRY then
+    begin
+      Result := '{#AppName} is still running, so its files cannot be replaced. Exit it from its '
+              + 'icon in the notification area (the system tray, next to the clock), then run '
+              + 'this installer again.';
+      exit;
+    end;
+    if ProcessIsRunning(ExeName) then StopProcessElevated(ExeName);
+  end;
+end;
+
 function LegacyTaskExists(): Boolean;
 var
   ResultCode: Integer;
@@ -436,7 +509,7 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  ResultCode, i: Integer;
+  ResultCode: Integer;
   LegacyWasRunning, LegacyAutoStart: Boolean;
   Cmd: string;
 begin
@@ -495,16 +568,15 @@ begin
 
   // taskkill returns once termination is requested, and the UAC prompt above can be declined
   // outright. Confirm the process is actually gone: with nothing left to unlock the install can
-  // proceed, otherwise stop here with an instruction rather than failing mid-copy on a locked
-  // exe. ASCII only — see the note in [Messages].
-  for i := 1 to 10 do
-  begin
-    if not (AppIsRunning() or ProcessIsRunning('{#LegacyExe}')) then exit;
-    Sleep(200);
-  end;
-  Result := '{#AppName} is still running, so its files cannot be replaced. Exit it from its icon '
-          + 'in the notification area (the system tray, next to the clock), then run this '
-          + 'installer again.';
+  // proceed, otherwise offer a retry, so the application can be exited from its own icon and the
+  // installation carried on in the same run rather than started over. Only when that is declined
+  // does the terminal message stop Setup, rather than failing mid-copy on a locked exe.
+  //
+  // The legacy executable is confirmed separately, after the current one: it is a migration
+  // concern, and keeping it out of the loop keeps the block above liftable as it stands.
+  Result := ConfirmProcessHasExited('{#AppExe}');
+  if Result = '' then
+    Result := ConfirmProcessHasExited('{#LegacyExe}');
 end;
 
 // The re-point script. It rewrites each exported definition so that ONLY the directory changes —
