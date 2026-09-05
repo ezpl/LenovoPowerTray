@@ -10,7 +10,9 @@
     mc:Ignorable="d">
 
     <!-- The chrome is this app's; the content is the shared BrandAboutControl, which carries no
-         update button so the tray keeps that job. -->
+         update button — each hosting application places that itself. This window is opened from the
+         tray menu, one item below "Check for updates", so it does not repeat it; the Settings
+         window's About page, which the tray menu is not, does. -->
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt" />
     </Window.SystemBackdrop>

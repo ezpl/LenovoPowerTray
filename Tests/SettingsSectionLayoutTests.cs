@@ -180,6 +180,19 @@ public class SettingsSectionLayoutTests
         Assert.Equal(2, Regex.Matches(SettingsMarkup(), "<local:CurrentNetworkCard").Count);
     }
 
+    /// <summary>Settings is the complete surface and the tray menu a convenience copy, so no action
+    /// may live in the tray alone. The update check did, until the About page — which already
+    /// carries the running version and the report of what it brought — gained the same entry
+    /// point. Asserted rather than left to review: removing the button restores the asymmetry
+    /// silently, and the tray still works, so nothing else would report it.</summary>
+    [Fact]
+    public void TheAboutPageOffersTheUpdateCheck()
+    {
+        string page = Page("AboutPanel");
+        Assert.Contains("x:Name=\"CheckForUpdatesButton\"", page, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"WhatsNewButton\"",        page, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheAddProfileLabelIsWrittenOnce()
     {

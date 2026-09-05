@@ -56,7 +56,7 @@ internal sealed class TrayMenu
         Flyout.Items.Add(new MenuFlyoutItem
         {
             Text    = "Check for updates",
-            Command = new RelayCommand(() => _ = CheckForUpdatesAsync()),
+            Command = new RelayCommand(CheckForUpdates),
         });
         foreach (var feature in features)
             Flyout.Items.Add(MakeToggle(feature));
@@ -122,7 +122,7 @@ internal sealed class TrayMenu
         _updateItem = new MenuFlyoutItem
         {
             Text    = $"⬆  Update available: v{version}",
-            Command = new RelayCommand(() => _ = CheckForUpdatesAsync()),
+            Command = new RelayCommand(CheckForUpdates),
         };
 
         Flyout.Items.Insert(0, _updateItem);
@@ -311,6 +311,32 @@ internal sealed class TrayMenu
             AppLog.Error("TrayMenu.ShowWhatsNew", ex);
             _whatsNewWindow = null;
         }
+    }
+
+    // Single-flight. The check takes up to UpdateCheckService.TimeoutSeconds with nothing on screen,
+    // so without this a second click queues a second dialog behind the first. UI thread only — both
+    // entry points are a click handler or a flyout command.
+    private bool _updateCheckRunning;
+
+    /// <summary>
+    /// Starts the update check, from the tray menu or from the Settings window's About page. Every
+    /// outcome is reported in a dialog owned by whichever window was in front, so no caller has to
+    /// report anything itself; a check already running is a no-op.
+    /// </summary>
+    internal void CheckForUpdates()
+    {
+        if (_updateCheckRunning) return;
+        _updateCheckRunning = true;
+        _ = RunUpdateCheckAsync();
+    }
+
+    /// <summary>Clears the single-flight flag however the check ends. The continuation returns to the
+    /// UI thread, so the flag is only ever touched there.</summary>
+    private async Task RunUpdateCheckAsync()
+    {
+        try { await CheckForUpdatesAsync(); }
+        catch (Exception ex) { AppLog.Error("TrayMenu.CheckForUpdates", ex); }
+        finally { _updateCheckRunning = false; }
     }
 
     /// <summary>Runs the update check. An accepted update downloads in the background and exits the app itself.</summary>

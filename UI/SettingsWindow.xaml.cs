@@ -588,6 +588,12 @@ internal sealed partial class SettingsWindow : Window
     /// points share one instance rather than each opening a copy.</summary>
     private void OnShowWhatsNew(object sender, RoutedEventArgs e) => _menu.ShowWhatsNew();
 
+    /// <summary>Runs the same update check the tray menu offers, so Settings is a complete surface
+    /// rather than pointing at the tray for one action. The tray menu owns the check for the same
+    /// reason it owns the "What's new" window: one flow, one place, whichever entry point starts
+    /// it. Every outcome, including "up to date", is reported in a dialog owned by this window.</summary>
+    private void OnCheckForUpdates(object sender, RoutedEventArgs e) => _menu.CheckForUpdates();
+
     private void OnPromoteIconsToggled(object sender, RoutedEventArgs e)
     {
         if (_updating) return;

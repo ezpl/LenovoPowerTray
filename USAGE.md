@@ -183,11 +183,13 @@ End users install by running `ChargeKeeper-Setup.exe` from the GitHub releases. 
 **per-user Inno Setup** package — it installs to `%LocalAppData%` with **no admin prompt**, adds a
 Start-menu shortcut, and offers one checkbox: **"Run at startup"**.
 
-Updates come from GitHub Releases, over the same path as the tray menu's **Check for updates**. The
-app asks 30 seconds after start and once every 24 hours while it runs. A downloaded installer is
-refused unless its digest is intact, a signature is present and the signer is `CN=ZeroZero Software`.
+Updates come from GitHub Releases. **Check for updates** starts the same check from two places — the
+tray menu, and the About page in Settings, beside the running version and **What's new**. The app
+also asks by itself 30 seconds after start and once every 24 hours while it runs. A downloaded
+installer is refused unless its digest is intact, a signature is present and the signer is
+`CN=ZeroZero Software`.
 
-An update accepted from the tray menu installs **unattended** — no wizard, no page to advance. The
+An accepted update installs **unattended** — no wizard, no page to advance. The
 app closes, the installer runs showing a progress window only, and the app starts again on the new
 version and reports what changed. It does not wait on the installer: waiting would hold the very
 files the installer replaces. An update that does not complete is stated the next time the app
