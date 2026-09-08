@@ -9,6 +9,13 @@ application, not what moved in the code. A change carrying no issue collapses in
 line, or is left out. Newest version first; the heading is the version alone, exactly as it appears
 in `ChargeKeeper.csproj`.
 
+## 1.44.0
+
+- #168 A lid-close wait armed only on a battery target no longer suspends the computer the moment
+  a charger is connected. A new "Switch off when a charger is connected" setting, on by default,
+  ends the wait instead, and a notification confirms the computer stayed awake because the target
+  can no longer be reached.
+
 ## 1.43.0
 
 - #140 The Lid delay badge on the dashboard now names the lock-at-close setting, and its
