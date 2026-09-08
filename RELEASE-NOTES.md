@@ -9,6 +9,15 @@ application, not what moved in the code. A change carrying no issue collapses in
 line, or is left out. Newest version first; the heading is the version alone, exactly as it appears
 in `ChargeKeeper.csproj`.
 
+## 1.45.0
+
+- #170 The power log now says what a lid-close wait actually did. It records whether the computer
+  slept while the wait was running and for how long, so a wait that was interrupted can no longer
+  look like one that held; what kind of sleep the computer does at all; whether Windows accepted the
+  request to stay awake, for both the lid delay and Keep Awake; and which conditions the wait armed
+  with, saying an unset condition as plainly as a set one. Nothing behaves differently — this is
+  what the log says, so the fault it exposes can be measured rather than guessed at.
+
 ## 1.44.0
 
 - #168 A lid-close wait armed only on a battery target no longer suspends the computer the moment
