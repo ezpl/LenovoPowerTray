@@ -20,6 +20,26 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")]
     internal static extern uint SetThreadExecutionState(uint esFlags);
 
+    // The counter that STOPS while the machine is suspended. The ordinary tick count and the wall
+    // clock both keep running across a sleep, so neither tells a held-awake span from a slept one.
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool QueryUnbiasedInterruptTime(out ulong unbiasedTime);
+
+    /// <summary>
+    /// How long this machine has been awake since it started, excluding every span it spent
+    /// suspended. The unit is 100 ns, which is a <see cref="TimeSpan"/> tick. Null when the query
+    /// fails, which callers must not read as zero.
+    /// </summary>
+    internal static TimeSpan? UnbiasedAwakeTime()
+    {
+        try
+        {
+            return QueryUnbiasedInterruptTime(out ulong ticks) ? TimeSpan.FromTicks((long)ticks) : null;
+        }
+        catch { return null; }
+    }
+
     // SetThreadExecutionState cannot hold off a lid-close sleep: lid close is a power-policy action,
     // not an idle timeout. Delaying it means overriding the user's LIDACTION to "do nothing" and
     // putting it back afterwards.
@@ -98,6 +118,12 @@ internal static class NativeMethods
     // then overrun it. LidPresent is the third BOOLEAN in that struct, hence index 2.
     private const int LidPresentOffset = 2;
 
+    // Two more BOOLEANs in the same struct. SystemS3 is the sixth field, AoAc the twenty-first —
+    // AoAc set is what makes the platform report "Standby (S0 Low Power Idle)". Every field up to
+    // both is a single byte, so the byte index is the field index.
+    private const int SystemS3Offset = 5;
+    private const int AoAcOffset     = 20;
+
     [DllImport("powrprof.dll")]
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool GetPwrCapabilities(byte[] systemPowerCapabilities);
@@ -111,6 +137,22 @@ internal static class NativeMethods
     {
         var buffer = new byte[256];
         try { return GetPwrCapabilities(buffer) ? buffer[LidPresentOffset] != 0 : null; }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Whether this machine does Modern Standby, and whether it offers traditional S3, from the same
+    /// power capabilities as <see cref="LidPresent"/>. Null when the query fails.
+    /// </summary>
+    internal static (bool ModernStandby, bool SupportsS3)? StandbyFlags()
+    {
+        var buffer = new byte[256];
+        try
+        {
+            return GetPwrCapabilities(buffer)
+                ? (buffer[AoAcOffset] != 0, buffer[SystemS3Offset] != 0)
+                : null;
+        }
         catch { return null; }
     }
 

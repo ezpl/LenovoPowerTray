@@ -51,6 +51,11 @@ internal static class LidDelayService
     private static System.Threading.Timer? _heartbeat;
     private static DateTimeOffset _waitStartedAt;
 
+    // Wall clock and awake time taken together as the wait arms. Elapsed time alone cannot say
+    // whether the machine was held awake or slept through most of the wait — the process resumes and
+    // carries on counting either way.
+    private static AwakeMark _waitClock;
+
     private static long   _generation;     // bumped by anything that invalidates a queued suspend
     private static IntPtr _lidRegistration = IntPtr.Zero;
 
@@ -578,8 +583,10 @@ internal static class LidDelayService
                 StartDelay();
                 break;
             case LidDelayAction.Cancel:
-                CancelDelay();
-                PowerLog.Event("Lid delay cancelled, the machine stays awake", "lid reopened");
+                // The lid reopening is the one moment a whole wait can be measured end to end, and
+                // the reading is what separates a wait that was held from one that was slept through.
+                PowerLog.Event("Lid delay cancelled, the machine stays awake",
+                               SleepGap.AddTo("lid reopened", CancelDelay()));
                 break;
 
             case LidDelayAction.HandBackUntilTheLidOpens:
@@ -644,6 +651,7 @@ internal static class LidDelayService
             _targetGivenUp = false;
             _timeSet       = s.LidDelayTimeEnabled;
             _waitStartedAt = DateTimeOffset.Now;
+            _waitClock     = AwakeClock.Mark();
 
             // Set only where a battery reading exists, and judged against it at once: a machine
             // already at its target must not wait for a level that has no reason to move, and a
@@ -700,9 +708,13 @@ internal static class LidDelayService
                 : null;
         }
 
+        // Both directions, like the battery target below: a wait recorded only when its timer armed
+        // reads as a wait that had one, and the difference decides what the machine was waiting for.
         if (armedTimer)
             PowerLog.Event($"Lid-delay timer armed — suspending in {delay.TotalMinutes:0} min unless the lid reopens",
                            "lid closed with the lid-delay timer on");
+        else
+            PowerLog.Event("No delay timer on this lid close", "the timer condition is off");
 
         // Recorded in every direction, including the ones where nothing was armed: a target that was
         // configured and never armed is otherwise indistinguishable from one quietly holding.
@@ -715,6 +727,8 @@ internal static class LidDelayService
         else if (SettingsService.Current.LidThermalCeilingEnabled)
             PowerLog.Event("No temperature ceiling on this lid close",
                            "this machine offers no reading that has been shown to be trustworthy");
+        else
+            PowerLog.Event("No temperature ceiling on this lid close", "the setting is off");
 
         // Whichever condition already stands satisfied ends the wait here, including the case where
         // neither was set at all.
@@ -739,13 +753,17 @@ internal static class LidDelayService
     private static void OnHeartbeat()
     {
         string? progress;
+        SleepGap? gap;
         lock (_sync)
         {
             if (!_delayPending) return;
             progress = _trail.OnElapsed(DateTimeOffset.Now - _waitStartedAt);
+            gap      = AwakeClock.Since(_waitClock);
         }
 
-        if (progress is not null) PowerLog.Say(progress);
+        // The reading rides on the report that was due anyway: a heartbeat saying "fifteen minutes
+        // into the delay" is exactly the line that has to stop being read as fifteen minutes held.
+        if (progress is not null) PowerLog.Say(SleepGap.AddSentenceTo(progress, gap));
     }
 
     /// <summary>
@@ -758,6 +776,7 @@ internal static class LidDelayService
         LidDelayAction action;
         long gen;
         string? ended = null;
+        SleepGap? gap = null;
         lock (_sync)
         {
             bool over = LidDelayPolicy.WaitIsOver(_timeSet, _timeArrived, _targetSet, _targetArrived,
@@ -768,14 +787,17 @@ internal static class LidDelayService
             {
                 // Composed before ClearLocked wipes what it describes.
                 ended = _trail.End(_lastBattery?.Percent);
+                gap   = AwakeClock.Since(_waitClock);
                 ClearLocked();
             }
             gen = _generation;
         }
 
         // First, and outside the lock: this is the line whose absence is meant to prove the
-        // application was not the one that acted, so nothing that can block may precede it.
-        if (ended is not null) PowerLog.Say(ended);
+        // application was not the one that acted, so nothing that can block may precede it. The
+        // awake reading travels on it rather than on a line of its own — the closing line is where
+        // "held for two hours" and "slept for most of it" have to stop looking alike.
+        if (ended is not null) PowerLog.Say(SleepGap.AddSentenceTo(ended, gap));
 
         switch (action)
         {
@@ -824,15 +846,21 @@ internal static class LidDelayService
         }
     }
 
-    private static void CancelDelay()
+    /// <summary>Ends the wait without sleeping. Returns how much of the cancelled wait the machine
+    /// was awake for, or null where there was no wait to cancel or the platform gave no reading.
+    /// </summary>
+    private static SleepGap? CancelDelay()
     {
         lock (_sync)
         {
             _generation++;   // invalidates a suspend that was already decided on
             _discharge.Disarm();
             _thermal.Disarm();
-            if (!_delayPending) return;
+            if (!_delayPending) return null;
+            // Read before ClearLocked, which is what ends the wait being measured.
+            var gap = AwakeClock.Since(_waitClock);
             ClearLocked();
+            return gap;
         }
     }
 
@@ -871,12 +899,15 @@ internal static class LidDelayService
         {
             try
             {
-                NativeMethods.SetThreadExecutionState(flags);
+                // The return value is the thread's previous state, or zero when the call failed. A
+                // refusal recorded as nothing is a wait that looks held while the machine is free
+                // to sleep, so the outcome is named on every take and every release.
+                uint previous = NativeMethods.SetThreadExecutionState(flags);
                 // Logged here, not at the request sites: this is when the OS learns about the hold.
                 PowerLog.Event(flags == NativeMethods.ES_CONTINUOUS
                                    ? "OS keep-awake hold released"
                                    : "OS keep-awake hold taken",
-                               "lid-close delay");
+                               $"lid-close delay; {ExecutionStateHold.Outcome(previous)}");
             }
             catch (Exception ex) { AppLog.Error("LidDelayService.SetThreadExecutionState", ex); }
         }

@@ -110,7 +110,7 @@ public class SleepWatchTests : IDisposable
         Assert.Contains("PowerModes.Suspend", body, StringComparison.Ordinal);
         Assert.Contains("SleepWatch.RecordSleep", body, StringComparison.Ordinal);
         Assert.Contains("SleepWatch.WentToSleep", body, StringComparison.Ordinal);
-        Assert.Contains("ReportWake()", body, StringComparison.Ordinal);
+        Assert.Contains("ReportWake(", body, StringComparison.Ordinal);
     }
 
     /// <summary>The level on waking is read fresh. The cached one is from before the suspend, and

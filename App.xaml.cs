@@ -297,6 +297,10 @@ public partial class App : Application
         // and applying its preset is exactly what this drops the rule to avoid.
         SettingsService.ClearRulesKeyedOnTheRoutedAdapter();
         NetworkLocationService.Start();
+        // Once, at startup. Nothing branches on it — every later entry in the power trail simply
+        // belongs to a machine whose sleep type is on the record above it.
+        PowerLog.Say($"{StandbyCapability.Describe(StandbyCapability.Read())}, " +
+                     "asked once at startup, from the OS power capabilities.");
         KeepAwakeService.Start();
         // Also the crash-recovery point: puts the user's own Windows lid-close action back if a
         // previous run died with it still overridden.
@@ -664,7 +668,10 @@ public partial class App : Application
     /// meanwhile. The level is read fresh rather than taken from the cache — the cached one is from
     /// before the suspend, and reporting it would state the drain as nothing.
     /// </summary>
-    private static void ReportWake()
+    /// <param name="measured">The awake-versus-wall reading since the last power notification, used
+    /// only where Windows sent no suspend to pair the resume with — which is what a Modern Standby
+    /// machine does.</param>
+    private static void ReportWake(SleepGap? measured)
     {
         var at = DateTimeOffset.Now;
 
@@ -683,7 +690,17 @@ public partial class App : Application
                 AppLog.Error("ReportWake.Read", ex);
             }
 
-            if (SleepWatch.Wake(at, levelNow) is { } sentence) PowerLog.Say(sentence);
+            if (SleepWatch.Wake(at, levelNow) is { } sentence)
+            {
+                PowerLog.Say(sentence);
+                return;
+            }
+
+            // No suspend to pair with, which used to leave the resume with no duration at all. The
+            // clock still holds one: the machine's awake counter stopped while it was away.
+            if (measured is { MachineSlept: true } gap)
+                PowerLog.Say($"{SleepWatch.WakeSentence(gap.Slept, null, levelNow)} Windows sent no " +
+                             "matching suspend, so the time away was measured against the clock.");
         });
     }
 
@@ -724,8 +741,15 @@ public partial class App : Application
         }
     }
 
+    // Wall clock and awake time at the last power notification, so a resume can say how long the
+    // machine was away even when no suspend notification preceded it.
+    private static AwakeMark _lastPowerMark = AwakeClock.Mark();
+
     private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
     {
+        var sinceLastNotification = AwakeClock.Since(_lastPowerMark);
+        _lastPowerMark = AwakeClock.Mark();
+
         // Every transition is logged: this timeline is what correlates a later silent teardown
         // with a power event.
         PowerLog.Event($"Windows power mode: {e.Mode}", "system power notification");
@@ -743,7 +767,7 @@ public partial class App : Application
 
         // Without this pair, downtime and a stopped application are the same shape in the log: a
         // gap in the samples with nothing to say which it was.
-        ReportWake();
+        ReportWake(sinceLastNotification);
         ReportAnEarlySleepIfOneIsOwed();
 
         // A charger swap while asleep produces no AC→battery transition to invalidate on.

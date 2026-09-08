@@ -163,13 +163,16 @@ internal static class KeepAwakeService
         {
             try
             {
-                NativeMethods.SetThreadExecutionState(flags);
+                // The return value is the thread's previous state, or zero when the call failed. A
+                // refusal recorded as nothing is a session that looks like it is holding the machine
+                // awake while nothing is, so the outcome is named on every take and every release.
+                uint previous = NativeMethods.SetThreadExecutionState(flags);
                 // Logged here, not at the request sites: this is when the OS learns about the hold.
                 PowerLog.Event(
                     flags == NativeMethods.ES_CONTINUOUS
                         ? "OS keep-awake hold released"
                         : $"OS keep-awake hold taken, display {((flags & NativeMethods.ES_DISPLAY_REQUIRED) != 0 ? "held on" : "free to sleep")}",
-                    "keep-awake session");
+                    $"keep-awake session; {ExecutionStateHold.Outcome(previous)}");
             }
             catch (Exception ex) { AppLog.Error("KeepAwakeService.SetThreadExecutionState", ex); }
         }

@@ -225,7 +225,7 @@ public class LidWaitTrailTests
     {
         string body = SourceMethods.Body(ServiceSource(), "Complete");
 
-        int line    = body.IndexOf("PowerLog.Say(ended)", StringComparison.Ordinal);
+        int line    = body.IndexOf("PowerLog.Say(SleepGap.AddSentenceTo(ended, gap))", StringComparison.Ordinal);
         int suspend = body.IndexOf("NativeMethods.Suspend()", StringComparison.Ordinal);
 
         Assert.True(line    >= 0, "The end-of-wait line is not written in Complete.");
