@@ -16,6 +16,10 @@ internal enum LidWaitEnd
     /// <summary>The machine reached its temperature ceiling, so the hold ended ahead of every
     /// condition it was waiting on.</summary>
     TooHot,
+
+    /// <summary>A charger was connected, putting the battery target out of reach, and the feature is
+    /// set to switch itself off on that signal. The wait ends without sleeping.</summary>
+    ChargerConnected,
 }
 
 /// <summary>
@@ -52,6 +56,12 @@ internal sealed class LidWaitTrail
     public const string SwitchedOffBeforeSleeping =
         "The lid-close delay was set to run once, so it switched itself off before putting the " +
         "machine to sleep.";
+
+    /// <summary>The line for the feature standing down on a connected charger. The machine staying
+    /// awake is named, because the one thing this path must never be mistaken for is a sleep.</summary>
+    public const string SwitchedOffOnChargerConnected =
+        "The lid-close delay switched itself off because a charger was connected. The machine " +
+        "stayed awake and Windows has its own lid-close action back.";
 
     private readonly System.Threading.Lock _sync = new();
 
@@ -154,6 +164,9 @@ internal sealed class LidWaitTrail
                 LidWaitEnd.TooHot =>
                     "The lid-close wait ended early because the machine reached its temperature " +
                     "ceiling, ahead of whatever it was waiting on.",
+                LidWaitEnd.ChargerConnected =>
+                    $"The lid-close wait ended without sleeping because a charger was connected at " +
+                    $"{levelNow ?? 0} %, putting the {_targetPercent ?? 0} % target out of reach.",
                 _ =>
                     "The lid-close wait ended because there was nothing left to wait for: neither " +
                     "the delay nor a battery target was set.",

@@ -40,6 +40,11 @@ internal static class LidDelayService
     // it has arrived. Whichever arrives first ends the wait — see LidDelayPolicy.WaitIsOver.
     private static bool _timeSet, _timeArrived, _targetSet, _targetArrived;
 
+    // Whether the battery target was withdrawn mid-wait because a charger put it out of reach. Kept
+    // apart from _targetSet because the two states it separates are otherwise identical: a wait that
+    // never had a condition is over, and a wait whose only condition was taken away is not.
+    private static bool _targetGivenUp;
+
     // What the current lid close says while it runs and at its end. The timer reports on the delay;
     // the battery reports off the readings that arrive anyway.
     private static readonly LidWaitTrail _trail = new();
@@ -302,6 +307,7 @@ internal static class LidDelayService
     public static void OnBatteryReport(int percent, bool isCharging)
     {
         LidDischargeDecision decision;
+        var charger = LidChargerResponse.Nothing;
         string? progress = null;
         lock (_sync)
         {
@@ -315,7 +321,16 @@ internal static class LidDelayService
                 _targetArrived = true;
                 _trail.Arrived(LidWaitEnd.BatteryTarget);
             }
-            if (decision is LidDischargeDecision.Charging)      _targetSet     = false;
+            // Withdrawn, and recorded as withdrawn: a condition that became unreachable is not one
+            // that was satisfied, so it must not end the wait in sleep. Either answer below keeps
+            // the machine awake — the switch chooses between standing down and waiting on.
+            if (decision is LidDischargeDecision.Charging)
+            {
+                _targetSet     = false;
+                _targetGivenUp = true;
+                charger = LidDelayPolicy.OnChargerConnected(
+                    SettingsService.Current.LidDelayOffWhenCharging, _delayPending);
+            }
 
             // Hold means a target is still outstanding, which only happens inside a wait.
             if (decision is LidDischargeDecision.Hold) progress = _trail.OnBatteryReading(percent);
@@ -337,7 +352,41 @@ internal static class LidDelayService
                 return;
         }
 
+        if (charger is LidChargerResponse.StandDown)
+        {
+            StandDownOnCharger(percent);
+            return;
+        }
+
         Complete();
+    }
+
+    /// <summary>
+    /// Ends the wait a connected charger has taken the battery target away from, without sleeping,
+    /// and switches the feature off so Windows' own lid-close action serves the next close. The
+    /// notice is shown as it happens rather than held for the next wake: the machine is awake, which
+    /// is the fact the notice exists to state.
+    /// </summary>
+    /// <remarks>Safe to call <see cref="SetEnabled"/> from here — this runs on the battery-report
+    /// thread, not the lid callback whose unregistration would deadlock against itself.</remarks>
+    private static void StandDownOnCharger(int percent)
+    {
+        string? ended;
+        lock (_sync)
+        {
+            // The lid can have reopened between the reading and this running, which ends the wait on
+            // its own terms and leaves nothing to stand down from.
+            if (!_delayPending) return;
+            _generation++;                    // invalidates a suspend that was already decided on
+            _trail.Arrived(LidWaitEnd.ChargerConnected);
+            ended = _trail.End(percent);
+            ClearLocked();
+        }
+
+        PowerLog.Say(ended);
+        PowerLog.Say(LidWaitTrail.SwitchedOffOnChargerConnected);
+        SetEnabled(false, "a charger was connected while the lid was shut");
+        ToastService.NotifyLidDelayStoodDown(percent);
     }
 
     /// <summary>Brings the power scheme and the lid subscription in line with the stored settings.
@@ -592,6 +641,7 @@ internal static class LidDelayService
             _delayPending  = true;
             _timeArrived   = false;
             _targetArrived = false;
+            _targetGivenUp = false;
             _timeSet       = s.LidDelayTimeEnabled;
             _waitStartedAt = DateTimeOffset.Now;
 
@@ -711,7 +761,7 @@ internal static class LidDelayService
         lock (_sync)
         {
             bool over = LidDelayPolicy.WaitIsOver(_timeSet, _timeArrived, _targetSet, _targetArrived,
-                                                  _thermalEnded);
+                                                  _thermalEnded, _targetGivenUp);
             action = LidDelayPolicy.OnWaitProgress(SettingsService.Current.LidDelayEnabled, _delayPending,
                                                    KeepAwakeService.Current is not null, over);
             if (action is LidDelayAction.Suspend or LidDelayAction.Cancel)
@@ -794,6 +844,7 @@ internal static class LidDelayService
         _timeArrived   = false;
         _targetSet     = false;
         _targetArrived = false;
+        _targetGivenUp = false;
         _trail.Clear();
         _discharge.Disarm();
         _thermal.Disarm();

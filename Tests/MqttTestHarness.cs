@@ -71,6 +71,8 @@ internal sealed class FakeSettingsActions : ISettingsActions
     public void SetLidDischargePercent(int percent) => Calls.Add($"LidDischargePercent={percent}");
     public void SetLidDelayLock(bool on) => Calls.Add($"LidDelayLock={on}");
     public void SetLidDelayOffAfterSleep(bool on) => Calls.Add($"LidDelayOffAfterSleep={on}");
+
+    public void SetLidDelayOffWhenCharging(bool on) => Calls.Add($"LidDelayOffWhenCharging={on}");
     public void SetSmartStandby(bool on) => Calls.Add($"SmartStandby={on}");
     public void SetLowBatteryWarning(bool on) => Calls.Add($"LowBatteryWarning={on}");
     public void SetLowBatteryLevel(int percent) => Calls.Add($"LowBatteryLevel={percent}");
@@ -105,7 +107,7 @@ internal static class MqttTestBed
         DateTimeOffset? keepAwakeExpires = null, bool keepAwakeDisplayOn = false,
         bool lidDelay = true, bool lidDelayTime = true, int lidDelayMinutes = 10,
         bool lidDischarge = false, int lidDischargePercent = 50, bool lidDelayLock = true,
-        bool lidDelayOffAfterSleep = false,
+        bool lidDelayOffAfterSleep = false, bool lidDelayOffWhenCharging = true,
         bool smartStandby = false, bool lowBatteryWarning = true, int lowBatteryLevel = 20,
         bool highBatteryWarning = false, int highBatteryLevel = 90, bool drainWarning = true,
         int drainRate = 3, bool networkProfiles = true, string? unknownNetworkPreset = null,
@@ -115,7 +117,7 @@ internal static class MqttTestBed
         TrayIconMode iconMode = TrayIconMode.Arc, int downtimeGap = 15) =>
         new(travelOverride, keepAwake, keepAwakeFor, keepAwakeExpires, keepAwakeDisplayOn,
             lidDelay, lidDelayTime, lidDelayMinutes, lidDischarge, lidDischargePercent,
-            lidDelayLock, lidDelayOffAfterSleep,
+            lidDelayLock, lidDelayOffAfterSleep, lidDelayOffWhenCharging,
             smartStandby, lowBatteryWarning, lowBatteryLevel,
             highBatteryWarning, highBatteryLevel, drainWarning, drainRate, networkProfiles,
             unknownNetworkPreset ?? PresetEditValidator.UnknownNetworkSentinel,

@@ -302,15 +302,27 @@
                         </StackPanel>
                     </controls:SettingsCard>
 
-                    <!-- The two rows that hold whichever kind of wait is running, so they sit above
-                         both preset groups rather than beside one of them. Disabled rather than
-                         hidden while lid handling is off: with it off there is no lid close to act on. -->
+                    <!-- The rows that hold whichever kind of wait is running, so they sit above both
+                         preset groups rather than beside one of them. Disabled rather than hidden
+                         while lid handling is off: with it off there is no lid close to act on. -->
                     <controls:SettingsCard Header="Switch off once the computer has slept"
                                             Description="Turns lid handling off again after one lid close has run its course.">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <local:InfoIcon Subject="switching lid handling off after it has held"
                                             Info="Only a lid close that ended in sleep counts. Opening the lid before the computer sleeps, or a keep-awake session suppressing the sleep, leaves lid handling on for the next lid close."/>
                             <ToggleSwitch x:Name="LidOffAfterSleepToggle" OnContent="On" OffContent="Off" Toggled="OnLidOffAfterSleepToggled"/>
+                        </StackPanel>
+                    </controls:SettingsCard>
+
+                    <!-- On by default: a charger puts the battery target out of reach, and with the
+                         target the only condition set, leaving this off means a wait that ends only
+                         when the lid opens. Neither position sleeps the computer. -->
+                    <controls:SettingsCard Header="Switch off when a charger is connected"
+                                            Description="Turns lid handling off when a charger is connected while the computer is waiting with its lid shut.">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <local:InfoIcon Subject="switching lid handling off when a charger is connected"
+                                            Info="Connecting a charger puts the battery target out of reach, so it can no longer end the wait. With this on, the wait ends without sleeping, lid handling switches itself off, Windows takes its own lid-close action back and a notification says so. With it off the wait carries on, ending when the delay runs out or the lid is opened. The computer is never put to sleep by a charger being connected, either way."/>
+                            <ToggleSwitch x:Name="LidOffWhenChargingToggle" OnContent="On" OffContent="Off" Toggled="OnLidOffWhenChargingToggled"/>
                         </StackPanel>
                     </controls:SettingsCard>
 

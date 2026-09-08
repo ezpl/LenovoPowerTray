@@ -85,6 +85,16 @@ internal static class ToastService
                 $"Reached {celsius:0.#} °C with the lid shut at {when}, so the lid-close wait ended and the computer slept.");
     }
 
+    /// <summary>
+    /// Said as it happens rather than at the next wake: the machine is awake, which is the whole
+    /// point of the notice. The wording states that nothing slept, because the feature switching
+    /// itself off is otherwise indistinguishable from the defect where it slept instead.
+    /// </summary>
+    public static void NotifyLidDelayStoodDown(int percent) =>
+        TryShow(NotificationKind.LidDelayStoodDown, percent, "Lid handling switched off",
+                $"A charger was connected at {percent} %, so the battery target can no longer be " +
+                "reached. The computer stayed awake and Windows handles the lid again.");
+
     public static void Cleanup()
     {
         try

@@ -9,7 +9,7 @@ using Xunit;
 namespace ChargeKeeper.Tests;
 
 /// <summary>
-/// The published surface as a declaration: the forty-eight entity ids, the component each is announced
+/// The published surface as a declaration: the forty-nine entity ids, the component each is announced
 /// under, and the discovery keys that decide how a receiver draws it.
 /// </summary>
 /// <remarks>
@@ -103,6 +103,8 @@ public class MqttEntityCatalogTests
             MqttPublishGroups.LidClose, MqttEntityCategory.Config, Icon: "mdi:lock"),
         new(MqttEntityCatalog.LidDelayOffAfterSleep, "switch", "Lid-delay off after sleeping",
             MqttPublishGroups.LidClose, MqttEntityCategory.Config, Icon: "mdi:numeric-1-box-outline"),
+        new(MqttEntityCatalog.LidDelayOffWhenCharging, "switch", "Lid-delay off when charging",
+            MqttPublishGroups.LidClose, MqttEntityCategory.Config, Icon: "mdi:power-plug"),
         new(MqttEntityCatalog.SmartStandby, "switch", "Smart Standby",
             MqttPublishGroups.LidClose, MqttEntityCategory.Primary, Icon: "mdi:sleep"),
 
@@ -159,13 +161,13 @@ public class MqttEntityCatalogTests
     };
 
     [Fact]
-    public void TheTable_HoldsExactlyTheFortyEightEntitiesTheAppPublishes() =>
+    public void TheTable_HoldsExactlyTheFortyNineEntitiesTheAppPublishes() =>
         Assert.Equal(
             _table.Select(r => r.EntityId).Order(StringComparer.Ordinal),
             MqttTestBed.Declared().All.Select(e => e.EntityId).Order(StringComparer.Ordinal));
 
     [Fact]
-    public void TheEntityMix_IsSeventeenSensorsThirteenSwitchesNineNumbersFourBinaryThreeSelectsAButtonAndAText()
+    public void TheEntityMix_IsSeventeenSensorsFourteenSwitchesNineNumbersFourBinaryThreeSelectsAButtonAndAText()
     {
         var byPlatform = MqttTestBed.Declared().All
             .GroupBy(e => e.Platform)
@@ -174,7 +176,7 @@ public class MqttEntityCatalogTests
         Assert.Equal(
             new Dictionary<string, int>(StringComparer.Ordinal)
             {
-                ["sensor"] = 17, ["switch"] = 13, ["number"] = 9,
+                ["sensor"] = 17, ["switch"] = 14, ["number"] = 9,
                 ["binary_sensor"] = 4, ["select"] = 3, ["button"] = 1, ["text"] = 1,
             },
             byPlatform);
@@ -309,7 +311,8 @@ public class MqttEntityCatalogTests
             MqttEntityCatalog.LidDelay, MqttEntityCatalog.LidDelayTime, MqttEntityCatalog.LidDelayMinutes,
             MqttEntityCatalog.LidDischarge, MqttEntityCatalog.LidDischargePercent,
             MqttEntityCatalog.LidDelayLock,
-            MqttEntityCatalog.LidDelayOffAfterSleep, MqttEntityCatalog.SmartStandby,
+            MqttEntityCatalog.LidDelayOffAfterSleep, MqttEntityCatalog.LidDelayOffWhenCharging,
+            MqttEntityCatalog.SmartStandby,
             MqttEntityCatalog.LowBatteryWarning, MqttEntityCatalog.LowBatteryLevel,
             MqttEntityCatalog.HighBatteryWarning, MqttEntityCatalog.HighBatteryLevel,
             MqttEntityCatalog.DrainWarning, MqttEntityCatalog.DrainRate,
@@ -483,6 +486,7 @@ public class MqttEntityCatalogTests
             MqttTestBed.Declared().All
                 .Where(e => e.EntityId is not (MqttEntityCatalog.LowPowerMode or MqttEntityCatalog.PowerState
                                                or MqttEntityCatalog.LidDelayOffAfterSleep
+                                               or MqttEntityCatalog.LidDelayOffWhenCharging
                                                or MqttEntityCatalog.LidDelayTime
                                                or MqttEntityCatalog.LidDischarge
                                                or MqttEntityCatalog.LidDischargePercent
