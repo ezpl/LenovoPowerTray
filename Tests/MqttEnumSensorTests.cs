@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using ChargeKeeper.Helpers;
 using ChargeKeeper.Services;
 using ZeroZero.Mqtt;
 using ZeroZero.Mqtt.Discovery;
@@ -10,7 +11,7 @@ using Xunit;
 namespace ChargeKeeper.Tests;
 
 /// <summary>
-/// The two readings drawn from a declared list of words, and the words themselves.
+/// The five readings drawn from a declared list of words, and the words themselves.
 /// </summary>
 /// <remarks>
 /// A receiver holds the state of one of these against the list announced with it and rejects
@@ -53,6 +54,18 @@ public class MqttEnumSensorTests
             AppChangeLog.Words);
 
     [Fact]
+    public void ThePowerStateWords_AreTheOnesAReceiverAlreadyMatchesOn() =>
+        Assert.Equal(["Discharging", "Charging", "Idle on mains"], PowerStates.Words);
+
+    [Fact]
+    public void TheBatteryHealthWords_AreTheOnesAReceiverAlreadyMatchesOn() =>
+        Assert.Equal(["Good", "Degraded", "Poor"], LiveStateBuilder.HealthWords);
+
+    [Fact]
+    public void TheBatteryStateWords_AreTheOnesAReceiverAlreadyMatchesOn() =>
+        Assert.Equal(["Charging", "Not Charging", "Full"], LiveStateBuilder.BatteryStateWords);
+
+    [Fact]
     public void EveryWayAWaitCanEnd_HasAPublishedChangeOfItsOwn()
     {
         // The two vocabularies are declared apart, so a member added to one and forgotten in the
@@ -64,47 +77,54 @@ public class MqttEnumSensorTests
                                                         StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void EveryDeclaredList_CarriesTheLiteralAnAbsentReadingPublishes() =>
-        // Without it a gap in the reading is a state the receiver was never offered, which it logs
-        // as an error rather than showing as nothing known.
-        Assert.Equal(MqttPayload.None, MqttEnumSensor.Announced(["Alpha", "Beta"]).Last());
+    /// <summary>The list a given enum sensor is declared over, so the two theories below need no
+    /// duplicated switch.</summary>
+    private static IReadOnlyList<string> WordsFor(string entityId) => entityId switch
+    {
+        MqttEntityCatalog.LastChange    => AppChangeLog.Words,
+        MqttEntityCatalog.LidWait       => LidWaitStates.Words,
+        MqttEntityCatalog.PowerState    => PowerStates.Words,
+        MqttEntityCatalog.BatteryHealth => LiveStateBuilder.HealthWords,
+        MqttEntityCatalog.BatteryState  => LiveStateBuilder.BatteryStateWords,
+        _ => throw new ArgumentOutOfRangeException(nameof(entityId), entityId, "Not a declared enum sensor."),
+    };
 
     [Theory]
     [InlineData(MqttEntityCatalog.LastChange)]
     [InlineData(MqttEntityCatalog.LidWait)]
-    public void EachEnumSensor_AnnouncesItsWordsAsTheReceiverReadsThem(string entityId)
+    [InlineData(MqttEntityCatalog.PowerState)]
+    [InlineData(MqttEntityCatalog.BatteryHealth)]
+    [InlineData(MqttEntityCatalog.BatteryState)]
+    public void EachEnumSensor_AnnouncesExactlyItsOwnWords(string entityId)
     {
         var entry = Component(entityId);
 
         Assert.Equal("sensor", entry.GetProperty("p").GetString());
         Assert.Equal(MqttEnumSensor.DeviceClass, entry.GetProperty("device_class").GetString());
 
-        var expected = entityId == MqttEntityCatalog.LastChange
-            ? MqttEnumSensor.Announced(AppChangeLog.Words)
-            : MqttEnumSensor.Announced(LidWaitStates.Words);
-
         Assert.Equal(
-            expected,
+            WordsFor(entityId),
             entry.GetProperty("options").EnumerateArray().Select(v => v.GetString()!).ToList());
     }
 
     [Theory]
     [InlineData(MqttEntityCatalog.LastChange)]
     [InlineData(MqttEntityCatalog.LidWait)]
-    public void EachEnumSensor_PublishesOnlyWordsItDeclared(string entityId)
+    [InlineData(MqttEntityCatalog.PowerState)]
+    [InlineData(MqttEntityCatalog.BatteryHealth)]
+    [InlineData(MqttEntityCatalog.BatteryState)]
+    public void EachEnumSensor_PublishesAReadingFromItsDeclaredWords(string entityId)
     {
-        // Whatever the reading is, and whether or not there is one, the payload is on the list.
         var declared = Component(entityId).GetProperty("options")
                                           .EnumerateArray().Select(v => v.GetString()!).ToList();
 
-        string?[] states =
-        [
-            MqttTestBed.Build(MqttTestBed.Live(), MqttTestBed.Surface()).Find(entityId)!.ReadState(),
-            MqttTestBed.Build(MqttTestBed.Live(), surface: null).Find(entityId)!.ReadState(),
-        ];
+        // The default surface carries no last change, which reads as the reserved literal rather
+        // than a declared word; give it one so every entity under test here reads a genuine word.
+        string? state = MqttTestBed.Build(
+                MqttTestBed.Live(), MqttTestBed.Surface(lastChange: AppChange.LidClosed))
+            .Find(entityId)!.ReadState();
 
-        Assert.All(states, state => Assert.Contains(state, declared));
+        Assert.Contains(state, declared);
     }
 
     [Fact]

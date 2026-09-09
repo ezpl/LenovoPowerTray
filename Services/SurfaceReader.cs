@@ -65,8 +65,10 @@ internal readonly record struct PublishCapabilities(
 internal static class SurfaceReader
 {
     /// <summary>Nothing matched, for the profile sensor. A matched-nothing reading is known, not
-    /// unknown, so it is published rather than left absent.</summary>
-    public const string NoProfile = "None";
+    /// unknown, so it is published rather than left absent. Spelled out rather than left as the
+    /// reserved word: that word is what the receiver reads as no reading at all, and a matched-
+    /// nothing answer is a different thing from a reading that never arrived.</summary>
+    public const string NoProfile = "No profile matched";
 
     public static SurfaceState Read(string appVersion)
     {

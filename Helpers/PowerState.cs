@@ -45,4 +45,8 @@ internal static class PowerStates
         PowerState.IdleOnMains => "Idle on mains",
         _                      => "Discharging",
     };
+
+    /// <summary>Every word the entity can publish, in the order the states are declared.</summary>
+    internal static IReadOnlyList<string> Words { get; } =
+        [.. Enum.GetValues<PowerState>().Select(Label)];
 }

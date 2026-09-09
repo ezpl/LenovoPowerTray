@@ -35,6 +35,21 @@ internal static class LiveStateBuilder
 
     public const string StateFull = "Full";
 
+    /// <summary>Battery state, as the closed list the published entity announces.</summary>
+    public static readonly IReadOnlyList<string> BatteryStateWords =
+        [StateCharging, StateNotCharging, StateFull];
+
+    /// <summary>Battery health from capacity wear, as the receiver's own vocabulary spells it.</summary>
+    public const string HealthGood = "Good";
+
+    public const string HealthDegraded = "Degraded";
+
+    public const string HealthPoor = "Poor";
+
+    /// <summary>Battery health, as the closed list the published entity announces.</summary>
+    public static readonly IReadOnlyList<string> HealthWords =
+        [HealthGood, HealthDegraded, HealthPoor];
+
     public static LiveState Build(
         int soc, int chargeRateMw, bool onAc, BatteryStatus status,
         ChargeThresholdState? threshold, int? adapterWatts,
@@ -105,9 +120,9 @@ internal static class LiveStateBuilder
     {
         if (fullMwh is not > 0 || designMwh is not > 0) return null;
         double ratio = (double)fullMwh.Value / designMwh.Value;
-        return ratio >= 0.80 ? "Good"
-             : ratio >= 0.60 ? "Degraded"
-             :                  "Poor";
+        return ratio >= 0.80 ? HealthGood
+             : ratio >= 0.60 ? HealthDegraded
+             :                  HealthPoor;
     }
 
     /// <summary>Minutes until full while charging at a meaningful rate; null otherwise. Shares

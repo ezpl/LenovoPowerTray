@@ -224,12 +224,11 @@ internal static class MqttEntityCatalog
                 DeviceClass = "battery", Unit = "%", StateClass = MqttStateClass.Measurement,
                 Read = () => MqttPayload.Number((long?)live()?.Soc),
             },
-            new MqttSensor
-            {
-                EntityId = BatteryState, Name = "Battery state", Group = MqttPublishGroups.BatteryStatus,
-                Icon = "mdi:battery-charging",
-                Read = () => live()?.BatteryState,
-            },
+            MqttEnumSensor.Of(
+                BatteryState, "Battery state", MqttPublishGroups.BatteryStatus,
+                MqttEntityCategory.Primary, "mdi:battery-charging",
+                LiveStateBuilder.BatteryStateWords,
+                () => live()?.BatteryState),
             new MqttSensor
             {
                 EntityId = BatteryPower, Name = "Battery power", Group = MqttPublishGroups.BatteryStatus,
@@ -251,24 +250,22 @@ internal static class MqttEntityCatalog
                 DeviceClass = "plug",
                 Read = () => live()?.OnAc,
             },
-            new MqttSensor
-            {
-                // The two mains states told apart, which neither is_charging nor on_ac says on its
-                // own: a pack held at a charge limit reads off and on. Read-only — the state is what
-                // the firmware is doing, and no command changes it. Derived like health is, so it is
-                // a diagnostic rather than a sixth uncategorised reading.
-                EntityId = PowerState, Name = "Battery power state", Group = MqttPublishGroups.BatteryStatus,
-                Category = MqttEntityCategory.Diagnostic, Icon = "mdi:power-plug-battery",
-                Read = () => live() is { } v
+            // The two mains states told apart, which neither is_charging nor on_ac says on its own: a
+            // pack held at a charge limit reads off and on. Read-only — the state is what the
+            // firmware is doing, and no command changes it. Derived like health is, so it is a
+            // diagnostic rather than a sixth uncategorised reading.
+            MqttEnumSensor.Of(
+                PowerState, "Battery power state", MqttPublishGroups.BatteryStatus,
+                MqttEntityCategory.Diagnostic, "mdi:power-plug-battery",
+                Helpers.PowerStates.Words,
+                () => live() is { } v
                     ? Helpers.PowerStates.Label(Helpers.PowerStates.From(v.IsCharging, v.OnAc))
-                    : null,
-            },
-            new MqttSensor
-            {
-                EntityId = BatteryHealth, Name = "Battery health", Group = MqttPublishGroups.BatteryStatus,
-                Category = MqttEntityCategory.Diagnostic, Icon = "mdi:heart-pulse",
-                Read = () => live()?.Health,
-            },
+                    : null),
+            MqttEnumSensor.Of(
+                BatteryHealth, "Battery health", MqttPublishGroups.BatteryStatus,
+                MqttEntityCategory.Diagnostic, "mdi:heart-pulse",
+                LiveStateBuilder.HealthWords,
+                () => live()?.Health),
             new MqttSensor
             {
                 EntityId = RemainingChargeTime, Name = "Battery remaining charge time",
@@ -679,7 +676,8 @@ internal static class MqttEntityCatalog
             // What the application itself is doing, as against the settings above. Five readings,
             // no commands: a receiver watches them, and every one of them moves on its own.
             MqttEnumSensor.Of(
-                LastChange, "App last change", MqttPublishGroups.AppDiagnostics, "mdi:history",
+                LastChange, "App last change", MqttPublishGroups.AppDiagnostics,
+                MqttEntityCategory.Diagnostic, "mdi:history",
                 AppChangeLog.Words,
                 () => surface()?.LastChange is { } change ? AppChangeLog.Label(change) : null),
             new MqttSensor
@@ -693,7 +691,8 @@ internal static class MqttEntityCatalog
                 Read = () => surface()?.LastChangeAt?.ToString("o", CultureInfo.InvariantCulture),
             },
             MqttEnumSensor.Of(
-                LidWait, "App lid-close wait", MqttPublishGroups.AppDiagnostics, "mdi:laptop",
+                LidWait, "App lid-close wait", MqttPublishGroups.AppDiagnostics,
+                MqttEntityCategory.Diagnostic, "mdi:laptop",
                 LidWaitStates.Words,
                 () => surface() is { } v ? LidWaitStates.Label(v.LidWait) : null,
                 () => s.Capabilities().LidClose),
