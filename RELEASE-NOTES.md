@@ -9,6 +9,12 @@ application, not what moved in the code. A change carrying no issue collapses in
 line, or is left out. Newest version first; the heading is the version alone, exactly as it appears
 in `ChargeKeeper.csproj`.
 
+## 1.47.1
+
+- Building the installer here now stops when the application or the installer cannot be signed with
+  a timestamp, rather than packing a file whose signature stops verifying the day the certificate
+  expires.
+
 ## 1.47.0
 
 - The shared components move to their current release: a fault that could end the application while

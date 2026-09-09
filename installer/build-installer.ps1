@@ -88,6 +88,10 @@ $publishedExe = Join-Path $publishDir "ChargeKeeper.exe"
 if (Test-Path $publishedExe) {
     Write-Host "==> Signing published exe..." -ForegroundColor Cyan
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\sign.ps1") -Path $publishedExe
+    # A machine with no certificate exits 0 and is signed by CI instead. A non-zero exit is a real
+    # failure — the signature refused, or one that came out without a timestamp — and the file it
+    # left behind must not be packed.
+    if ($LASTEXITCODE -ne 0) { throw "Signing the published exe failed ($LASTEXITCODE)." }
 }
 
 # ── 3. Locate Inno Setup compiler ────────────────────────────────────────────
@@ -120,7 +124,9 @@ $setup = Join-Path $installerDir "Output\ChargeKeeper-Setup-$Version.exe"
 if (Test-Path $setup) {
     Write-Host "==> Signing installer..." -ForegroundColor Cyan
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\sign.ps1") -Path $setup
-    # Non-fatal: sign.ps1 prints a warning and exits 0 if the cert is absent.
+    # As above: absent certificate exits 0, a refused or untimestamped signature does not, and an
+    # installer nobody can verify once the certificate expires must not be handed on as finished.
+    if ($LASTEXITCODE -ne 0) { throw "Signing the installer failed ($LASTEXITCODE)." }
 }
 
 Write-Host ""
