@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  packages: read
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +35,14 @@ jobs:
     env:
       CODE_SIGN_PFX: ${{ secrets.CODE_SIGN_PFX }}
       CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+      # The shared library arrives as packages from GitHub Packages, which authenticates every read.
+      # NuGet takes the credential from this variable rather than from nuget.config, so no token is
+      # written into the repository, and the MSBuild SDK resolver that fetches the build kit reads
+      # the same variable — it has to, because the kit is resolved before any project is evaluated.
+      # PACKAGES_READ_TOKEN first, the job's own token second: the packages are private and belong
+      # to another repository in the organisation, so the job's own token reaches them only where
+      # each package grants this repository read access.
+      NuGetPackageSourceCredentials_zerozero: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN || secrets.GITHUB_TOKEN }}
 
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -45,29 +54,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      # ProjectReference to ZeroZero.Brand.WinUI uses a relative path expecting a
-      # sibling checkout (..\0z0-shared\src\...) — locally that's a sibling
-      # folder. actions/checkout refuses a `path:` outside the workspace
-      # ("not under D:\a\ChargeKeeper\ChargeKeeper"), so clone the (public) repo
-      # directly beside this checkout instead. (Repo was renamed ZeroZeroBrand → 0z0-shared.)
-      #
-      # PINNED to the exact 0z0-shared revision this app is validated against. The ref is read
-      # from the shared `.github/0z0-shared-ref` file — the same file ci.yml reads — so a
-      # release cannot build against something other than what CI tested; bump it there. The
-      # clone is full, so `checkout --detach` resolves a tag as well as a raw commit; a shallow
-      # clone would need `--branch`. The resolved commit is logged, because it is the record of
-      # what a given release was built from.
-      - name: Clone 0z0-shared (sibling dependency, pinned)
-        shell: pwsh
-        run: |
-          $ref = (Get-Content .github/0z0-shared-ref |
-                  Where-Object { $_.Trim() -and $_ -notmatch '^\s*#' } |
-                  Select-Object -First 1).Trim()
-          Write-Host "Pinned 0z0-shared ref: $ref"
-          git clone https://github.com/0z00z0/0z0-shared.git ../0z0-shared
-          git -C ../0z0-shared checkout --detach $ref
-          Write-Host "0z0-shared at $(git -C ../0z0-shared rev-parse HEAD)"
 
       # ── 2. Resolve version string ────────────────────────────────────────────
       # Tag-triggered: strip the leading 'v'.

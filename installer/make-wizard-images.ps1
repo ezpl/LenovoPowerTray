@@ -55,11 +55,16 @@ $cSteel   = $BatteryGlyphPalettes.Product.Body
 $cSage    = $BatteryGlyphPalettes.Product.Fill
 $cTerra   = $BatteryGlyphPalettes.Product.Guard
 
-# ── Brand typeface: Cascadia Mono, loaded privately from the sibling design/shared repo ──
-$fontPaths = @(
-    (Join-Path $root "..\0z0-shared\src\ZeroZero.Brand.WinUI\Assets\Fonts\CascadiaMono.ttf"),
-    (Join-Path $root "..\0z0-design\fonts\CascadiaMono.ttf")
-)
+# ── Brand typeface: Cascadia Mono, loaded privately from the restored brand package, or from the
+#    sibling design repository where one is checked out ──
+$packageRoot = $env:NUGET_PACKAGES
+if (-not $packageRoot) { $packageRoot = Join-Path $env:USERPROFILE '.nuget\packages' }
+$brandFont = Get-ChildItem -ErrorAction SilentlyContinue -Recurse -Filter 'CascadiaMono.ttf' `
+    -Path (Join-Path $packageRoot 'zerozero.brand.winui') |
+    Sort-Object FullName -Descending | Select-Object -First 1
+$fontPaths = @()
+if ($brandFont) { $fontPaths += $brandFont.FullName }
+$fontPaths += (Join-Path $root "..\0z0-design\fonts\CascadiaMono.ttf")
 $pfc = New-Object System.Drawing.Text.PrivateFontCollection
 $brandFamily = $null
 foreach ($fp in $fontPaths) {

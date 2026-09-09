@@ -1,22 +1,18 @@
 <Project>
 
   <!--
-    The ZeroZero build kit, taken by the sibling-checkout route. The kit is never a PackageReference:
-    that restores cleanly, delivers nothing and fails the build with ZZB011. Three imports, each in
-    the file the SDK reserves for it — the props here, the targets in Directory.Build.targets, the
-    pins in Directory.Packages.props — and a fourth in ChargeKeeper.csproj for the WinUI application
-    block.
+    The ZeroZero build kit. The kit is never a PackageReference: that restores cleanly, delivers
+    nothing and fails the build with ZZB011. It is an MSBuild SDK package whose version is named in
+    global.json under msbuild-sdks, and it arrives through four imports that each carry
+    Sdk="ZeroZero.Build" and name their file — the props here, the targets in
+    Directory.Build.targets, the pins in Directory.Packages.props, and the WinUI application block
+    in ChargeKeeper.csproj.
 
-    ZeroZeroSharedDir is set before the import so the import can find the checkout, and it governs
-    every ProjectReference into the library as well. CI clones 0z00z0/0z0-shared beside this
-    repository at the commit named in .github/0z0-shared-ref; a local build compiles against the live
-    sibling working tree, which warning ZZ0001 reports when the two differ.
+    Resolving the SDK is itself a restore against the family feed, so the feed and its credential
+    have to be in place before the first project is evaluated. nuget.config carries the source and
+    the mapping; the credential comes from the environment.
   -->
 
-  <PropertyGroup>
-    <ZeroZeroSharedDir Condition="'$(ZeroZeroSharedDir)' == ''">$(MSBuildThisFileDirectory)..\0z0-shared</ZeroZeroSharedDir>
-  </PropertyGroup>
-
-  <Import Project="$(ZeroZeroSharedDir)\src\ZeroZero.Build\Sdk\ZeroZero.Build.props" />
+  <Import Project="ZeroZero.Build.props" Sdk="ZeroZero.Build" />
 
 </Project>

@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -40,34 +41,22 @@ jobs:
     # for any step, including ones added later without a cap of their own.
     timeout-minutes: 20
 
+    # The shared library arrives as packages from GitHub Packages, which authenticates every read.
+    # NuGet takes the credential from this variable rather than from nuget.config, so no token is
+    # written into the repository, and the MSBuild SDK resolver that fetches the build kit reads the
+    # same variable — it has to, because the kit is resolved before any project is evaluated.
+    # Job-level so every restore, build, test and publish step in the job inherits it.
+    #
+    # PACKAGES_READ_TOKEN first, the job's own token second. The packages are private and belong to
+    # another repository in the organisation, so the job's own token reaches them only where each
+    # package grants this repository read access; the secret is the route that does not depend on
+    # that. Whichever is in place, the value is a secret reference and never a literal.
+    env:
+      NuGetPackageSourceCredentials_zerozero: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN || secrets.GITHUB_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      # ProjectReference to ZeroZero.Brand.WinUI uses a relative path expecting a
-      # sibling checkout (..\0z0-shared\src\...) — locally that's a sibling
-      # folder. actions/checkout refuses a `path:` outside the workspace
-      # ("not under D:\a\ChargeKeeper\ChargeKeeper"), so clone the (public) repo
-      # directly beside this checkout instead. (Repo was renamed ZeroZeroBrand → 0z0-shared.)
-      #
-      # PINNED to the exact 0z0-shared revision this app is validated against, so a change
-      # merged there cannot reach this build unannounced. The ref lives in a SINGLE shared
-      # file — `.github/0z0-shared-ref` — that both this workflow and release.yml read, so
-      # the two pins cannot drift out of lockstep. Bump the ref there.
-      #
-      # A full `git clone` fetches tags, so `checkout --detach` resolves a tag as well as a
-      # raw commit. Do NOT add `--depth 1` without `--branch <ref>`: a shallow clone leaves
-      # nothing to check out and the step fails on a ref that is perfectly valid.
-      - name: Clone 0z0-shared (sibling dependency, pinned)
-        shell: pwsh
-        run: |
-          $ref = (Get-Content .github/0z0-shared-ref |
-                  Where-Object { $_.Trim() -and $_ -notmatch '^\s*#' } |
-                  Select-Object -First 1).Trim()
-          Write-Host "Pinned 0z0-shared ref: $ref"
-          git clone https://github.com/0z00z0/0z0-shared.git ../0z0-shared
-          git -C ../0z0-shared checkout --detach $ref
-          Write-Host "0z0-shared at $(git -C ../0z0-shared rev-parse HEAD)"
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v6
@@ -113,8 +102,8 @@ jobs:
       # signs and ships. Suppressing the initializer would rewrite bin\ ChargeKeeper.dll
       # without it, and in release.yml risk shipping an exe that cannot start.
       #
-      # PINNED to 2.2.0 to match <PackageReference Include="Microsoft.WindowsAppSDK"
-      # Version="2.2.0" /> in ChargeKeeper.csproj — the runtime the bootstrapper asks for
+      # PINNED to 2.2.0 to match the Microsoft.WindowsAppSDK version the build kit pins for the
+      # whole family — the runtime the bootstrapper asks for
       # (Microsoft.WindowsAppSDK.Runtime 2.2.0's WindowsAppSDK-VersionInfo.cs: framework
       # package family Microsoft.WindowsAppRuntime.2, version 2.2.0.0). Not `latest`: that
       # aka.ms link already resolves to a DIFFERENT, larger build, so `latest` would silently
@@ -220,7 +209,7 @@ jobs:
   # setup icon - fails here in under a minute instead of on the tag. What it cannot catch is an
   # error that depends on the real publish output, since the stub has none.
   #
-  # Separate job on purpose: it needs no .NET, no shared-library clone and no Windows App Runtime,
+  # Separate job on purpose: it needs no .NET, no package feed and no Windows App Runtime,
   # so it runs beside the build rather than lengthening it.
   installer-script:
     runs-on: windows-latest

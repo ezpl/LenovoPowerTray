@@ -4,8 +4,9 @@
        UseWinUI, WindowsPackageType None, EnableMsixTooling, WinUISDKReferences, the runtime
        identifier from the process architecture, and DefaultLanguage en-GB. Imported at the top so
        this project's own properties below still win. The kit's other three imports are at the
-       repository root. This project keeps its own app.manifest, so the kit writes none. -->
-  <Import Project="$(ZeroZeroBuildDir)Sdk\ZeroZero.WinUIApp.props" />
+       repository root, and its version is in global.json. This project keeps its own app.manifest,
+       so the kit writes none. -->
+  <Import Project="ZeroZero.WinUIApp.props" Sdk="ZeroZero.Build" />
 
   <PropertyGroup>
     <RootNamespace>ChargeKeeper</RootNamespace>
@@ -239,55 +240,30 @@
     <PackageReference Include="WinUIEx" />
   </ItemGroup>
 
-  <!-- Shared ZeroZero Software branding: the About window comes from here instead of a
-       hand-rolled UI/AboutWindow. Plain sibling-folder ProjectReference (no NuGet feed yet) — the
-       CI workflows git-clone 0z00z0/0z0-shared beside this repo and check out the commit pinned in
-       .github/0z0-shared-ref; local dev uses the live sibling folder. Project name
-       ZeroZero.Brand.WinUI. Integration contract documented in README. ZeroZeroSharedDir is set in
-       Directory.Build.props, which the build kit's own import needs before this file is read. -->
+  <!-- The shared library, as packages from the family feed. Versions are pinned centrally in
+       Directory.Packages.props and never on the reference. Two references cover everything this
+       application takes: the brand component for the About window, in place of a hand-rolled
+       UI/AboutWindow, and the MQTT module. ZeroZero.Mqtt.WinUI brings ZeroZero.Mqtt.Discovery,
+       ZeroZero.Mqtt, ZeroZero.Config, ZeroZero.Controls.WinUI, ZeroZero.Primitives and
+       ZeroZero.Win32 with it, and MQTTnet transitively inside ZeroZero.Mqtt, which is the only
+       assembly that sees it — no client-library type reaches a public signature, so this
+       application references MQTTnet nowhere. Declaring any of those here would resolve the same
+       assembly twice. Integration contract in README; implementation guide in the shared library's
+       own MQTT document. -->
   <ItemGroup>
-    <ProjectReference Include="$(ZeroZeroSharedDir)\src\ZeroZero.Brand.WinUI\ZeroZero.Brand.WinUI.csproj" />
-    <!--
-      The MQTT module. ONE reference: ZeroZero.Mqtt.WinUI brings ZeroZero.Mqtt.Discovery,
-      ZeroZero.Mqtt and ZeroZero.Config with it, and MQTTnet transitively inside ZeroZero.Mqtt,
-      which is the only assembly that sees it — no client-library type reaches a public signature,
-      so this app no longer references MQTTnet at all. Implementation guide:
-      0z0-shared/docs/zerozero-mqtt.md.
-
-      UndefineProperties is required whenever the consuming app publishes self-contained with
-      WindowsAppSDKSelfContained set as a GLOBAL property: MSBuild propagates a global into every
-      project reference, and the Windows App SDK targets reject it on a class library. This app
-      declares it as a project property instead (see above), so the metadata only covers a
-      command-line publish that sets it globally.
-    -->
-    <ProjectReference Include="$(ZeroZeroSharedDir)\src\ZeroZero.Mqtt.WinUI\ZeroZero.Mqtt.WinUI.csproj">
-      <UndefineProperties>WindowsAppSDKSelfContained</UndefineProperties>
-    </ProjectReference>
+    <PackageReference Include="ZeroZero.Brand.WinUI" />
+    <PackageReference Include="ZeroZero.Mqtt.WinUI" />
   </ItemGroup>
-
-  <!--
-    Guard the pin. A local build compiles against the LIVE sibling folder while CI clones the
-    commit pinned in .github/0z0-shared-ref, so a shared type present only in the sibling tree
-    builds green here and fails CI with CS0234. Warning, never error, and skipped entirely when
-    the ref file or the sibling clone is absent, so a docs-only checkout or a machine without git
-    is unaffected.
-  -->
-  <Target Name="CheckSharedPin" BeforeTargets="Build"
-          Condition="Exists('$(MSBuildProjectDirectory)\.github\0z0-shared-ref') And Exists('$(ZeroZeroSharedDir)\.git')">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\check-shared-pin.ps1&quot; -RefFile &quot;$(MSBuildProjectDirectory)\.github\0z0-shared-ref&quot; -SharedPath &quot;$(ZeroZeroSharedDir)&quot;"
-          ConsoleToMSBuild="true" ContinueOnError="true" EchoOff="true" StandardOutputImportance="low">
-      <Output TaskParameter="ConsoleOutput" PropertyName="_SharedPinMessage" />
-    </Exec>
-    <Warning Condition="'$(_SharedPinMessage)' != ''" Code="ZZ0001" Text="$(_SharedPinMessage)" />
-  </Target>
 
   <!--
     Authenticode-sign the produced executable on Release builds.
     Delegates to sign.ps1, which signs with the self-signed cert created by
     'sign.ps1 -Setup'. ContinueOnError keeps the build green if no cert is present.
+    The signing itself belongs to the build kit's own script, whose path the kit publishes as
+    ZeroZeroSigningScript and which resolves inside the restored SDK package.
   -->
   <Target Name="SignOutput" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\sign.ps1&quot; -Path &quot;$(TargetDir)$(AssemblyName).exe&quot;" ContinueOnError="true" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\sign.ps1&quot; -Path &quot;$(TargetDir)$(AssemblyName).exe&quot; -Signer &quot;$(ZeroZeroSigningScript)&quot;" ContinueOnError="true" />
   </Target>
 
   <!-- Publish properties: ReadyToRun on Release; trimming OFF (WinUI + reflection-y bits are

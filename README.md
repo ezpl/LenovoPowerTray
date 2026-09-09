@@ -219,17 +219,19 @@ rest of the app (Smart Standby, auto-start, battery gauge) works fine without it
 - .NET 10 SDK
 - A C++ toolset (Visual Studio / Build Tools with **"Desktop development with C++"**) to build the
   native Smart Charge bridge (`native/`) — only needed once
-- A sibling clone of [0z0-shared](https://github.com/0z00z0/0z0-shared) (shared ZeroZero
-  Software components — see [Shared components](#shared-components) below)
+- A token that can read the [0z0-shared](https://github.com/0z00z0/0z0-shared) packages on GitHub
+  Packages — see [Shared components](#shared-components) below
 
 ## Build from source
 
 ```powershell
-# 0. Clone this repo AND the shared components library as siblings (the csproj references
-#    ..\0z0-shared\src\ZeroZero.Brand.WinUI by relative path).
+# 0. Clone this repo, and give NuGet a credential for the shared library's feed. GitHub Packages
+#    authenticates every read, so a restore without this stops at NU1301 with a 401. The variable
+#    carries the credential so that no token is written into the repository, and the build kit is
+#    resolved through it too.
 git clone https://github.com/0z00z0/ChargeKeeper.git
-git clone https://github.com/0z00z0/0z0-shared.git
 cd ChargeKeeper
+$env:NuGetPackageSourceCredentials_zerozero = "Username=$(gh api user --jq .login);Password=$(gh auth token)"
 
 # 1. Build the native Smart Charge bridge (LenPower.dll). One-time, needs the C++ toolset.
 #    build.cmd locates MSVC + MIDL automatically (incl. VS 2026 Insiders).
@@ -340,8 +342,7 @@ connect, and what stops a one-off retirement being replayed on every start.
 
 The **About** window comes from [0z0-shared](https://github.com/0z00z0/0z0-shared)
 (`ZeroZero.Brand.WinUI.BrandAboutWindow`, MIT) — the shared components library used across ZeroZero
-Software apps, referenced as a sibling-folder `ProjectReference` (no NuGet package yet). How the
-integration works:
+Software apps, referenced as the package `ZeroZero.Brand.WinUI`. How the integration works:
 
 - The app supplies data only (`BrandAboutOptions` → `AboutInfo`: name, version, description, repo
   URL, external-library credits); the library owns all chrome, layout, and the brand typeface.
@@ -349,42 +350,44 @@ integration works:
   *Check for Updates* button. ChargeKeeper always returns `false` — it downloads the installer on a
   background task and exits itself when ready, so the window never needs to drive the exit
   (`OnBeforeExit` is therefore left unset).
-The **MQTT module** comes from the same repository — `ZeroZero.Mqtt` for the protocol,
+The **MQTT module** comes from the same library — `ZeroZero.Mqtt` for the protocol,
 `ZeroZero.Mqtt.Discovery` for the entity and document layer, and `ZeroZero.Mqtt.WinUI` for the
-settings panel the MQTT page hosts. ChargeKeeper supplies the topic root, the fifty-six entity
+settings panel the MQTT page hosts. Only the last of those is referenced: it brings the other two,
+the primitives, the controls, the Win32 numbers and the single-type settings store with it.
+ChargeKeeper supplies the topic root, the fifty-six entity
 declarations, the seven publish groups and the copy saying what it publishes; everything else —
 the endpoint sweep, the encryption model, the retained document, the eviction ledger and every
 protocol sentence in the panel — belongs to the module.
 
-The **build kit** comes from the same repository and is not a reference at all: `Directory.Build.props`,
-`Directory.Build.targets` and `Directory.Packages.props` at the repository root each import one of
-its files from the sibling checkout, and `ChargeKeeper.csproj` imports the WinUI application block.
-It decides the language settings, the studio identity, the signing step and every third-party
-package version, so **no `PackageReference` in this repository carries a `Version` attribute** —
-a version there fails the build. A package the family shares moves in the kit's own pin file; one
-only ChargeKeeper uses moves in `Directory.Packages.props` here.
+The **build kit** comes from the same library and is not a `PackageReference` at all: it is an
+MSBuild SDK. `global.json` names its version, and `Directory.Build.props`, `Directory.Build.targets`
+and `Directory.Packages.props` at the repository root each import one of its files, as
+`ChargeKeeper.csproj` imports the WinUI application block. It decides the language settings, the
+studio identity, the signing step and every third-party package version, so **no `PackageReference`
+in this repository carries a `Version` attribute** — a version there fails the build. A package the
+family shares moves in the kit's own pin file; one only ChargeKeeper uses moves in
+`Directory.Packages.props` here.
 
 ### Resolving the shared library
 
-**Resolution:** pinned to the commit named in `.github/0z0-shared-ref`. It carries the 0.7.0 release
-of every component in the library, plus the fixes merged after it — 2026-09-03.
+**Resolution:** packages from GitHub Packages at `https://nuget.pkg.github.com/0z00z0/index.json`,
+one pinned version per component. `nuget.config` names the source and maps every `ZeroZero.*` name
+to it alone, `global.json` pins the build kit, and `Directory.Packages.props` pins the two
+references — the brand component and the MQTT module.
 
-Both workflows read that one file and check the sibling clone out at the commit it names, so a
-release builds against exactly what CI tested, a release rebuilds identically later, and a change
-merged in 0z0-shared cannot reach a build here without the pin being bumped. The pin is a commit
-rather than a tag or branch name, so it cannot move under a build.
+Every version is explicit, so a build here and a build on a runner resolve the same assemblies, a
+release rebuilds identically later, and a change published in the shared library cannot reach a
+build here until a pin is raised. Raise the pin in the same change that adopts something new.
 
-A local build compiles against the live sibling working tree instead of the pin, so a green local
-build proves nothing about it. Build warning `ZZ0001` reports the difference whenever the sibling
-clone sits at another commit — a warning, not an error, so local work against a newer library is
-not blocked. Adopting anything new from the shared library means bumping the pin in the same
-change; without it CI fails with CS0234.
-
-**Bump the pin in the same change that adopts something new.** Expect `ZZ0001` in the meantime on a
-machine whose sibling clone has moved past the pin.
+**The feed authenticates every read**, including of a package whose repository is public. NuGet
+takes the credential from the environment variable `NuGetPackageSourceCredentials_zerozero`, whose
+value is `Username=<account>;Password=<token>`; nothing carrying a token is written into the
+repository. The MSBuild SDK resolver that fetches the build kit reads the same variable, so it has
+to be set before the first build as well as before the first restore. Without it the restore stops
+at `NU1301` with a 401.
 
 **Notice before a structural change.** 0z0-shared gives notice before renaming or relocating
-anything reachable from ChargeKeeper's source reference. On notice, build against the proposed shape,
+anything reachable from ChargeKeeper's reference. On notice, build against the proposed shape,
 report back what breaks here, and expect the change to land only after that report. Two structural
 changes stand proposed and undecided: moving the info bubble control out of `ZeroZero.Brand.WinUI`,
 and introducing a layer beneath that assembly. The first reaches further into this repository — the

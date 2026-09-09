@@ -12,8 +12,8 @@
     SignOutput target in ChargeKeeper.csproj) and exits 0 if no certificate is found,
     so it never breaks a build.
 
-    The signing itself belongs to the build kit's Sign-Executable.ps1 in the sibling
-    0z0-shared checkout. It reads the file back off disk and refuses a signature that
+    The signing itself belongs to the build kit's Sign-Executable.ps1, which ships in
+    the ZeroZero.Build package. It reads the file back off disk and refuses a signature that
     arrived without a timestamp (ZZS013) — an outcome Set-AuthenticodeSignature reports
     as Valid, and one that stops verifying the day the certificate expires.
 
@@ -33,9 +33,10 @@ param(
     [string] $Path,                                        # exe to sign (defaults to Release output)
     [string] $Subject      = "CN=ZeroZero Software",
     [string] $TimestampUrl = "http://timestamp.digicert.com",
-    # The sibling shared checkout. Resolved in the body, not here: $PSScriptRoot is still empty
-    # while a parameter default is evaluated under Windows PowerShell.
-    [string] $SharedDir
+    # The build kit's signing script. The Release build passes the path the kit itself publishes;
+    # a hand run resolves it from the restored package. Resolved in the body, not here:
+    # $PSScriptRoot is still empty while a parameter default is evaluated under Windows PowerShell.
+    [string] $Signer
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,20 +114,25 @@ if (-not $cert) {
     return
 }
 
-# The sibling checkout, by the same convention Directory.Build.props uses.
-if (-not $SharedDir) {
-    $SharedDir = Join-Path (Split-Path $PSScriptRoot -Parent) "..\0z0-shared"
+# The kit's signer inside the restored SDK package. The Release build hands the path over as
+# -Signer; a hand run finds it from the version global.json names, in the package folder NuGet uses.
+if (-not $Signer) {
+    $repo    = Split-Path $PSScriptRoot -Parent
+    $version = (Get-Content (Join-Path $repo 'global.json') -Raw |
+                ConvertFrom-Json).'msbuild-sdks'.'ZeroZero.Build'
+    $packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES }
+                else { Join-Path $env:USERPROFILE '.nuget\packages' }
+    $Signer = Join-Path $packages "zerozero.build\$version\scripts\Sign-Executable.ps1"
 }
 
-$signer = Join-Path $SharedDir "src\ZeroZero.Build\scripts\Sign-Executable.ps1"
-if (-not (Test-Path $signer)) {
-    # A docs-only checkout has no sibling clone; signing is a build-time nicety, not a gate.
-    Write-Warning "The build kit's signer is not at '$signer'. Skipping."
+if (-not (Test-Path $Signer)) {
+    # Nothing is restored in a docs-only checkout; signing is a build-time nicety, not a gate.
+    Write-Warning "The build kit's signer is not at '$Signer'. Skipping."
     return
 }
 
 Write-Host "Signing $Path ..."
-& powershell -NoProfile -ExecutionPolicy Bypass -File $signer `
+& powershell -NoProfile -ExecutionPolicy Bypass -File $Signer `
     -Path $Path -Thumbprint $cert.Thumbprint -TimestampServer $TimestampUrl
 if ($LASTEXITCODE -ne 0) {
     throw "Signing failed: the build kit's signer exited $LASTEXITCODE."

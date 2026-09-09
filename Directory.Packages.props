@@ -5,7 +5,19 @@
        declaration, an Update that moves a pin, or a VersionOverride each fail the build (ZZB006 /
        NU1013). ChargeKeeper's own packages are declared below the import. -->
 
-  <Import Project="$(ZeroZeroSharedDir)\src\ZeroZero.Build\Sdk\ZeroZero.Packages.props" />
+  <Import Project="ZeroZero.Packages.props" Sdk="ZeroZero.Build" />
+
+  <!-- The shared library, one pin per component. A component's package version is its own tag
+       without the prefix, so the numbers move independently and a bump here is a deliberate
+       adoption. Two references carry the whole surface this application uses: the About window from
+       the brand component, and the MQTT module, which brings the MQTT discovery layer, the
+       primitives, the controls, the Win32 numbers and the single-type settings store with it. A
+       package that arrives transitively is never declared here — declaring one resolves the same
+       assembly twice. -->
+  <ItemGroup Label="ZeroZero shared library">
+    <PackageVersion Include="ZeroZero.Brand.WinUI" Version="0.7.0" />
+    <PackageVersion Include="ZeroZero.Mqtt.WinUI" Version="0.7.2" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Same toolkit family and version as the family's SettingsControls pin; the two ship together
