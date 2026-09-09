@@ -12,6 +12,11 @@
     SignOutput target in ChargeKeeper.csproj) and exits 0 if no certificate is found,
     so it never breaks a build.
 
+    The signing itself belongs to the build kit's Sign-Executable.ps1 in the sibling
+    0z0-shared checkout. It reads the file back off disk and refuses a signature that
+    arrived without a timestamp (ZZS013) — an outcome Set-AuthenticodeSignature reports
+    as Valid, and one that stops verifying the day the certificate expires.
+
     To use a real CA-issued certificate instead, import it into Cert:\CurrentUser\My
     with the same -Subject and skip -Setup; signing picks it up by subject name.
 
@@ -27,7 +32,10 @@ param(
     [switch] $Setup,
     [string] $Path,                                        # exe to sign (defaults to Release output)
     [string] $Subject      = "CN=ZeroZero Software",
-    [string] $TimestampUrl = "http://timestamp.digicert.com"
+    [string] $TimestampUrl = "http://timestamp.digicert.com",
+    # The sibling shared checkout. Resolved in the body, not here: $PSScriptRoot is still empty
+    # while a parameter default is evaluated under Windows PowerShell.
+    [string] $SharedDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -105,14 +113,21 @@ if (-not $cert) {
     return
 }
 
-Write-Host "Signing $Path ..."
-$result = Set-AuthenticodeSignature `
-    -FilePath $Path `
-    -Certificate $cert `
-    -HashAlgorithm SHA256 `
-    -TimestampServer $TimestampUrl
-
-if ($result.Status -ne "Valid") {
-    throw "Signing failed: $($result.Status) - $($result.StatusMessage)"
+# The sibling checkout, by the same convention Directory.Build.props uses.
+if (-not $SharedDir) {
+    $SharedDir = Join-Path (Split-Path $PSScriptRoot -Parent) "..\0z0-shared"
 }
-Write-Host "Signed successfully (status: $($result.Status))."
+
+$signer = Join-Path $SharedDir "src\ZeroZero.Build\scripts\Sign-Executable.ps1"
+if (-not (Test-Path $signer)) {
+    # A docs-only checkout has no sibling clone; signing is a build-time nicety, not a gate.
+    Write-Warning "The build kit's signer is not at '$signer'. Skipping."
+    return
+}
+
+Write-Host "Signing $Path ..."
+& powershell -NoProfile -ExecutionPolicy Bypass -File $signer `
+    -Path $Path -Thumbprint $cert.Thumbprint -TimestampServer $TimestampUrl
+if ($LASTEXITCODE -ne 0) {
+    throw "Signing failed: the build kit's signer exited $LASTEXITCODE."
+}

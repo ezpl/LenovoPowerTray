@@ -1,0 +1,17 @@
+# The family's MSBuild switches, taken from the build kit's template. MSBuild finds this file by
+# walking up from the project being built, and reads it before the command line, so a switch given
+# on the command line wins over anything here.
+
+# Node reuse cannot be set from a props file: MSBuild decides it before any project is evaluated,
+# which is why this switch lives in a response file and not beside the kit's other defaults.
+
+# End the worker nodes with the build rather than keeping them alive for the next one. A worker
+# node is launched with CREATE_NO_WINDOW, which allocates a console all the same, so every node
+# also holds a console host. Left to reuse them, a solution build leaves one worker node and one
+# console host per node behind for fifteen minutes — fifteen of each and about 2 GB on a sixteen-
+# core machine — and concurrent builds stack them. Ending them with the build costs no measurable
+# time: a clean solution build takes the same either way.
+-nodeReuse:false
+
+# A worker cap does not belong here. "dotnet build" appends its own -maxcpucount after this file,
+# so -m set here is overridden and does nothing; passing it on the command line is what works.
