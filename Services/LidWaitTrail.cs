@@ -57,6 +57,27 @@ internal sealed class LidWaitTrail
         "The lid-close delay was set to run once, so it switched itself off before putting the " +
         "machine to sleep.";
 
+    /// <summary>
+    /// The line for a lid-close sleep a keep-awake session is holding back. This and the two below
+    /// are one story in whichever way it ends, so each names the sleep as owed rather than gone: the
+    /// condition the wait was watching for did arrive, and only the session stands between it and a
+    /// sleeping machine.
+    /// </summary>
+    public const string SleepOwedUntilTheSessionEnds =
+        "The sleep this lid close earned is owed rather than cancelled. It happens when the " +
+        "keep-awake session ends, if the lid is still shut then.";
+
+    /// <summary>The line for that sleep being served, which is the moment the machine used to sit
+    /// awake with its lid shut instead.</summary>
+    public const string SleepServedWhenTheSessionEnded =
+        "The keep-awake session that was holding the machine awake has ended and the lid is still " +
+        "shut, so the sleep this lid close earned is being served now.";
+
+    /// <summary>The line for that sleep being dropped because the lid was opened first.</summary>
+    public const string OwedSleepDroppedOnLidOpen =
+        "The sleep a keep-awake session was holding back is dropped: the lid was opened first, so " +
+        "the evidence the sleep rested on is gone.";
+
     /// <summary>The line for the feature standing down on a connected charger. The machine staying
     /// awake is named, because the one thing this path must never be mistaken for is a sleep.</summary>
     public const string SwitchedOffOnChargerConnected =

@@ -236,7 +236,7 @@
                                 <TextBlock x:Name="KeepAwakeRemainingText" VerticalAlignment="Center"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                 <local:InfoIcon Subject="keeping this computer awake"
-                                                Info="A session holds the computer awake until it expires. It ends by itself, and is never restored after a restart. While one runs it also suppresses the lid-close sleep, so the computer is never slept out from under one, and lid handling stays on for the next lid close."/>
+                                                Info="A session holds the computer awake until it expires. It ends by itself, and is never restored after a restart. While one runs it also suppresses the lid-close sleep, so the computer is never slept out from under one, and lid handling stays on for the next lid close. A suppressed sleep is held back rather than cancelled: it happens when the session ends, if the lid is still shut then."/>
                             </StackPanel>
 
                             <!-- What a session does beyond its own clock: its effect on the lid, and
@@ -305,10 +305,18 @@
                                             Description="ChargeKeeper decides when the computer sleeps after the lid closes, instead of Windows.">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <local:InfoIcon Subject="lid handling"
-                                            Info="The computer sleeps as soon as one of the two conditions below is reached — the delay running out, or the battery reaching its target — whichever comes first. With neither switched on it sleeps as soon as the lid closes. Opening the lid before it sleeps cancels the wait. A running keep-awake session suppresses the sleep, so the computer is never slept out from under one."/>
+                                            Info="The computer sleeps as soon as one of the two conditions below is reached — the delay running out, or the battery reaching its target — whichever comes first. With neither switched on it sleeps as soon as the lid closes. Opening the lid before it sleeps cancels the wait. A running keep-awake session suppresses the sleep, so the computer is never slept out from under one; that sleep is held back rather than cancelled, and happens when the session ends if the lid is still shut."/>
                             <ToggleSwitch x:Name="LidDelayToggle" OnContent="On" OffContent="Off" Toggled="OnLidDelayToggled"/>
                         </StackPanel>
                     </controls:SettingsCard>
+
+                    <!-- What this machine's sleep type does to the promise above. A live reading, so
+                         it is set in code rather than written here, and shown on nothing but a
+                         Modern Standby machine. -->
+                    <TextBlock x:Name="LidStandbyCaveatText"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
+                               Visibility="Collapsed"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
                     <!-- The rows that hold whichever kind of wait is running, so they sit above both
                          preset groups rather than beside one of them. Disabled rather than hidden

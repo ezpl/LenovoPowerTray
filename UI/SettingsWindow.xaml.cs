@@ -1509,6 +1509,13 @@ internal sealed partial class SettingsWindow : Window
         LidThermalCard.Description = hasReading
             ? "Ends the wait early and sleeps the computer, ahead of the delay and the battery target."
             : "This computer exposes no temperature reading that has been shown to be trustworthy, so there is nothing to act on.";
+
+        // Read fresh rather than cached, like every other reading on this page — and shown whether
+        // the feature is on or off, because it is what someone deciding whether to switch it on
+        // needs to know.
+        string? caveat = StandbyCapability.LidWaitCaveat(StandbyCapability.Read());
+        LidStandbyCaveatText.Text       = caveat ?? string.Empty;
+        LidStandbyCaveatText.Visibility = caveat is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnLidDelayToggled(object sender, RoutedEventArgs e)

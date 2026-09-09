@@ -245,19 +245,79 @@ public class LidDelayPolicyTests
     }
 
     [Fact]
-    public void OnWaitProgress_KeepAwakeSessionRunning_ReleasesTheHoldButDoesNotSleep()
+    public void OnWaitProgress_KeepAwakeSessionRunning_OwesTheSleepRatherThanCancellingIt()
     {
         // A keep-awake session is an explicit request and outranks a background rule about lids:
-        // closing the lid on a long build must not kill it.
-        Assert.Equal(LidDelayAction.Cancel,
+        // closing the lid on a long build must not kill it. The sleep is held back rather than taken
+        // away — the condition the wait was watching for did arrive.
+        Assert.Equal(LidDelayAction.SuspendWhenTheSessionEnds,
             LidDelayPolicy.OnWaitProgress(enabled: true, delayPending: true, keepAwakeActive: true, waitIsOver: true));
     }
 
     [Fact]
+    public void OnWaitProgress_ASuppressedSleepIsNotTheSameAnswerAsACancelledOne() =>
+        // The two used to be one answer, which is the whole of why a suppressed sleep was never
+        // served. Pinned apart: folding them back together leaves the machine awake, lid shut, for as
+        // long as Windows' own idle timeout — five hours on mains on one machine measured.
+        Assert.NotEqual(
+            LidDelayPolicy.OnWaitProgress(enabled: false, delayPending: true, keepAwakeActive: false, waitIsOver: true),
+            LidDelayPolicy.OnWaitProgress(enabled: true,  delayPending: true, keepAwakeActive: true,  waitIsOver: true));
+
+    [Fact]
     public void OnWaitProgress_FeatureTurnedOffMidWait_ReleasesTheHoldButDoesNotSleep()
     {
+        // A feature switched off owes nothing: it has been told to stop deciding when this machine
+        // sleeps, so it must not decide it later either.
         Assert.Equal(LidDelayAction.Cancel,
             LidDelayPolicy.OnWaitProgress(enabled: false, delayPending: true, keepAwakeActive: false, waitIsOver: true));
+        Assert.Equal(LidDelayAction.Cancel,
+            LidDelayPolicy.OnWaitProgress(enabled: false, delayPending: true, keepAwakeActive: true, waitIsOver: true));
+    }
+
+    // ShouldCompleteSuppressedWait
+
+    [Fact]
+    public void ShouldCompleteSuppressedWait_SessionOverAndTheLidStillShut_Completes() =>
+        Assert.True(LidDelayPolicy.ShouldCompleteSuppressedWait(
+            sleepOwed: true, enabled: true, lidClosed: true, keepAwakeActive: false));
+
+    [Fact]
+    public void ShouldCompleteSuppressedWait_LidOpenedInTheMeantime_DoesNot() =>
+        // The shut lid is the evidence the whole ending rests on. Without it this would sleep a
+        // machine somebody is sitting in front of.
+        Assert.False(LidDelayPolicy.ShouldCompleteSuppressedWait(
+            sleepOwed: true, enabled: true, lidClosed: false, keepAwakeActive: false));
+
+    [Fact]
+    public void ShouldCompleteSuppressedWait_AnotherSessionAlreadyRunning_KeepsOwingIt() =>
+        // The signal fires for a session starting as well as ending, and a hand-off from one session
+        // to the next must not be read as the moment nothing holds the machine awake.
+        Assert.False(LidDelayPolicy.ShouldCompleteSuppressedWait(
+            sleepOwed: true, enabled: true, lidClosed: true, keepAwakeActive: true));
+
+    [Fact]
+    public void ShouldCompleteSuppressedWait_FeatureSwitchedOff_DoesNot() =>
+        Assert.False(LidDelayPolicy.ShouldCompleteSuppressedWait(
+            sleepOwed: true, enabled: false, lidClosed: true, keepAwakeActive: false));
+
+    [Fact]
+    public void ShouldCompleteSuppressedWait_NothingOwed_DoesNot() =>
+        // Every session ending raises the signal, and all but the ones that suppressed a sleep have
+        // nothing to serve.
+        Assert.False(LidDelayPolicy.ShouldCompleteSuppressedWait(
+            sleepOwed: false, enabled: true, lidClosed: true, keepAwakeActive: false));
+
+    [Fact]
+    public void ShouldCompleteSuppressedWait_EveryPartIsRequired()
+    {
+        // Each input pinned as load-bearing from its own side: dropping any one of the four turns a
+        // deferred sleep into a machine slept at the wrong moment, or one never slept at all.
+        foreach (int drop in Enumerable.Range(0, 4))
+            Assert.False(LidDelayPolicy.ShouldCompleteSuppressedWait(
+                sleepOwed:       drop != 0,
+                enabled:         drop != 1,
+                lidClosed:       drop != 2,
+                keepAwakeActive: drop == 3));
     }
 
     [Fact]
@@ -482,8 +542,9 @@ public class LidDelayPolicyTests
     [Fact]
     public void ShouldTurnOffAfterLidClose_StoppedShort_LeavesTheFeatureOn()
     {
-        // A keep-awake session vetoing the sleep, a suspend Windows refused, and the feature switched
-        // off by hand all end the wait without it running its course.
+        // A suspend Windows refused and the feature switched off by hand both end the wait without it
+        // running its course. A sleep a keep-awake session held back is not among them: it does reach
+        // sleep, later, and arrives here as Slept when it does.
         Assert.False(LidDelayPolicy.ShouldTurnOffAfterLidClose(offAfterSleep: true, LidDelayOutcome.StoppedShort));
     }
 

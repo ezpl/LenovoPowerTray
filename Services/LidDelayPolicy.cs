@@ -12,6 +12,10 @@ internal enum LidDelayAction
     Cancel,
     /// <summary>Release the OS hold, then suspend the machine.</summary>
     Suspend,
+    /// <summary>Release the OS hold and end the wait, leaving the sleep owed: a keep-awake session is
+    /// holding the machine awake, and the sleep this wait earned is served when that session ends, if
+    /// the lid is still shut then.</summary>
+    SuspendWhenTheSessionEnds,
     /// <summary>Keep the OS hold and stay pending: no condition has arrived yet.</summary>
     Hold,
     /// <summary>Give Windows its own lid-close action back until the lid next opens. The process
@@ -30,8 +34,9 @@ internal enum LidDelayOutcome
     Slept,
     /// <summary>The lid was reopened before the machine slept.</summary>
     LidReopened,
-    /// <summary>The wait ended without sleeping: the feature was switched off, a keep-awake session
-    /// vetoed the sleep, or Windows refused the suspend.</summary>
+    /// <summary>The wait ended without sleeping: the feature was switched off, or Windows refused the
+    /// suspend. A sleep a keep-awake session held back is not one of these — it reaches sleep when
+    /// that session ends, and arrives as <see cref="Slept"/> then.</summary>
     StoppedShort,
 }
 
@@ -152,20 +157,49 @@ internal static class LidDelayPolicy
     }
 
     /// <summary>
-    /// A running keep-awake session vetoes the sleep — an explicit "do not sleep this machine" the
-    /// user asked for by hand. The veto does not re-arm, so re-closing the lid starts a fresh delay.
-    /// It is read only once the wait is over, so a reading arriving mid-wait cannot cancel a delay
-    /// that still had time to run; both vetoes then outrank the wait itself, so a feature switched
-    /// off mid-wait releases the hold rather than sleeping the machine.
+    /// A running keep-awake session suppresses the sleep — an explicit "do not sleep this machine"
+    /// the user asked for by hand, which outranks a standing rule about lids. It suppresses rather
+    /// than cancels: the condition the wait was watching for did arrive, so the sleep is owed and
+    /// waits for the session to end, which is <see cref="ShouldCompleteSuppressedWait"/>. Both vetoes
+    /// are read only once the wait is over, so a reading arriving mid-wait cannot cancel a delay that
+    /// still had time to run; a feature switched off mid-wait releases the hold and owes nothing,
+    /// because a feature that is off has no sleep to serve.
     /// </summary>
     public static LidDelayAction OnWaitProgress(bool enabled, bool delayPending, bool keepAwakeActive,
                                                 bool waitIsOver)
     {
         if (!delayPending) return LidDelayAction.None;             // lid reopened; a stale tick
         if (!waitIsOver) return LidDelayAction.Hold;
-        if (!enabled || keepAwakeActive) return LidDelayAction.Cancel;
+        if (!enabled) return LidDelayAction.Cancel;
+        if (keepAwakeActive) return LidDelayAction.SuspendWhenTheSessionEnds;
         return LidDelayAction.Suspend;
     }
+
+    /// <summary>
+    /// Whether a sleep suppressed by a keep-awake session is served now. Every part has to hold at
+    /// this moment, not at the moment the sleep was owed.
+    /// </summary>
+    /// <remarks>
+    /// The condition that ended the wait is not re-evaluated. It arrived: the delay ran out, or the
+    /// battery reached its target, and the only thing that stopped the machine sleeping on it was the
+    /// session. Judging it again would ask a condition that has already been met to be met a second
+    /// time, and a battery target that a charger has since put out of reach would then read as a wait
+    /// that was never satisfied — which is the mistake #168 and #169 were filed against, from the
+    /// other side.
+    /// <para>The lid is the one thing re-read, because it is the evidence the whole ending rests on:
+    /// a lid opened in the meantime cancels the wait as it always did, and a machine somebody is
+    /// sitting in front of must never be slept.</para>
+    /// <para>No lock is taken at this point. The workstation was locked as the lid closed, if that is
+    /// configured, which is where the lock belongs — the machine has been shut and locked for the
+    /// whole of the session.</para>
+    /// </remarks>
+    /// <param name="sleepOwed">Whether a wait ended in <see cref="LidDelayAction.SuspendWhenTheSessionEnds"/>
+    /// and has not been served or dropped since.</param>
+    /// <param name="keepAwakeActive">Whether a session is running now. A second session started
+    /// before the first ended keeps the sleep owed rather than serving it.</param>
+    public static bool ShouldCompleteSuppressedWait(bool sleepOwed, bool enabled, bool lidClosed,
+                                                    bool keepAwakeActive)
+        => sleepOwed && enabled && lidClosed && !keepAwakeActive;
 
     /// <summary>
     /// Whether the delay switches itself off now this lid close is over, leaving Windows' own

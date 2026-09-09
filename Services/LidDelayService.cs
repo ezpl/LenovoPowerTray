@@ -37,6 +37,16 @@ internal static class LidDelayService
     // place would park the action on "do nothing" with nobody serving the close.
     private static bool   _handedBack;
 
+    // The lid as the switch last reported it, kept beyond the end of a wait. A sleep a keep-awake
+    // session suppressed is served when that session ends, and by then no wait is running, so
+    // _delayPending can no longer answer whether the lid is still shut.
+    private static bool   _lidClosed;
+
+    // A wait whose conditions were met while a keep-awake session held the machine awake. The sleep
+    // is owed rather than cancelled: the condition arrived, and only the session stopped it being
+    // acted on. Cleared when it is served, when the lid opens, and when the feature goes off.
+    private static bool _sleepOwed;
+
     // The two conditions of the current lid close: whether each was set when it started, and whether
     // it has arrived. Whichever arrives first ends the wait — see LidDelayPolicy.WaitIsOver.
     private static bool _timeSet, _timeArrived, _targetSet, _targetArrived;
@@ -134,6 +144,10 @@ internal static class LidDelayService
 
         Reconcile();
         SettingsService.Reloaded += OnSettingsReloaded;
+        // A sleep a session suppressed is served when that session ends, and this is the only signal
+        // that says so — the session's own expiry, its being switched off, and the network it was
+        // tied to going away all arrive through it.
+        KeepAwakeService.StateChanged += OnKeepAwakeStateChanged;
     }
 
     /// <summary>
@@ -146,6 +160,7 @@ internal static class LidDelayService
         // Dropped along with the rest: OnSettingsReloaded reconciles, and a reload reaching a stopped
         // service would re-apply the override with no Stop left to undo it.
         SettingsService.Reloaded -= OnSettingsReloaded;
+        KeepAwakeService.StateChanged -= OnKeepAwakeStateChanged;
         CancelDelay();
         Unsubscribe();
         if (SettingsService.Current.HasSavedLidAction) RestoreSavedAction();
@@ -578,13 +593,18 @@ internal static class LidDelayService
     {
         LidDelayAction action;
         bool first;
+        bool droppedOwedSleep = false;
         lock (_sync)
         {
             first = !_lidSeeded;
             _lidSeeded = true;
+            _lidClosed = closed;
             // Any lid open invalidates a queued suspend, including one already decided on but not yet
             // run — by then _delayPending is false and the policy has nothing left to cancel.
             if (!closed) _generation++;
+            // A sleep a session was holding back is dropped rather than kept: reopening the lid takes
+            // away the one piece of evidence the deferred sleep rests on.
+            if (!closed && _sleepOwed) { _sleepOwed = false; droppedOwedSleep = true; }
             action = LidDelayPolicy.OnLidState(closed ? LidState.Closed : LidState.Opened,
                                                SettingsService.Current.LidDelayEnabled, _delayPending, first,
                                                _handedBack);
@@ -595,6 +615,8 @@ internal static class LidDelayService
         PowerLog.Event($"Lid {(closed ? "closed" : "opened")}",
                        first ? "lid-switch registration replay (initial state, not a real transition)"
                              : "lid switch");
+
+        if (droppedOwedSleep) PowerLog.Say(LidWaitTrail.OwedSleepDroppedOnLidOpen);
 
         switch (action)
         {
@@ -809,8 +831,14 @@ internal static class LidDelayService
                                                   _thermalEnded, _targetGivenUp);
             action = LidDelayPolicy.OnWaitProgress(SettingsService.Current.LidDelayEnabled, _delayPending,
                                                    KeepAwakeService.Current is not null, over);
-            if (action is LidDelayAction.Suspend or LidDelayAction.Cancel)
+            if (action is LidDelayAction.Suspend or LidDelayAction.Cancel
+                       or LidDelayAction.SuspendWhenTheSessionEnds)
             {
+                // A suppressed sleep ends the wait here like any other: the condition arrived, so the
+                // timer, the watches and the hold have nothing left to do, and leaving them running
+                // would keep reporting progress through a wait that is over. What outlives the wait
+                // is the one flag saying the sleep it earned has still to be served.
+                if (action is LidDelayAction.SuspendWhenTheSessionEnds) _sleepOwed = true;
                 // Composed before ClearLocked wipes what it describes.
                 ended   = _trail.End(_lastBattery?.Percent);
                 endedBy = _trail.EndedBy;
@@ -835,46 +863,93 @@ internal static class LidDelayService
             case LidDelayAction.Suspend:
                 PowerLog.Event("Suspending the machine",
                                "a lid-close condition was reached with the lid still closed");
-                // Off this timer thread: SetSuspendState does not return until the machine resumes.
-                Task.Run(() =>
-                {
-                    // The lid can be opened between the decision above and this running, by which
-                    // point _delayPending is false and nothing else would stop the suspend.
-                    bool abandoned;
-                    lock (_sync) abandoned = _generation != gen;
-                    if (abandoned)
-                    {
-                        PowerLog.Event("Suspend abandoned", "the lid was opened before it ran");
-                        TurnOffIfDue(LidDelayOutcome.LidReopened);
-                        return;
-                    }
-
-                    // Before the suspend, never after it: SetSuspendState does not return until the
-                    // machine resumes, so a stand-down placed after it is never written on a machine
-                    // that never resumes with the application running, and the one-off delay would
-                    // still be armed for the next lid close. Putting the user's own lid action back
-                    // with the lid already shut cannot re-trigger it — Windows acts on the
-                    // transition, not on the state.
-                    bool stoodDown = TurnOffIfDue(LidDelayOutcome.Slept);
-
-                    if (!NativeMethods.Suspend())
-                    {
-                        PowerLog.Event("Suspend was refused by Windows", "SetSuspendState returned false");
-                        AppLog.Error("LidDelayService.Suspend failed", null);
-                        // The stand-down was taken for a sleep that did not happen, and only a lid
-                        // close that reached sleep expires the setting.
-                        if (stoodDown)
-                            SetEnabled(true, "the suspend the one-off delay stood down for was refused");
-                        return;
-                    }
-                });
+                SuspendOffThisThread(gen);
                 break;
-            case LidDelayAction.Cancel:
+
+            case LidDelayAction.SuspendWhenTheSessionEnds:
                 PowerLog.Event("A lid-close condition was reached but the machine was not suspended",
                                "a keep-awake session is holding it awake");
+                // The stand-down is not taken here: this lid close has not slept yet, and only a
+                // close that reaches sleep expires a one-off delay. It is taken when the sleep the
+                // session is holding back is finally served.
+                PowerLog.Say(LidWaitTrail.SleepOwedUntilTheSessionEnds);
+                break;
+
+            case LidDelayAction.Cancel:
+                PowerLog.Event("A lid-close condition was reached but the machine was not suspended",
+                               "lid handling was switched off while the lid was shut");
                 TurnOffIfDue(LidDelayOutcome.StoppedShort);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Serves the sleep a keep-awake session was holding back, now that session has ended. Reached
+    /// from <see cref="KeepAwakeService.StateChanged"/>, which is raised for a session starting as
+    /// well as ending — <see cref="LidDelayPolicy.ShouldCompleteSuppressedWait"/> is what tells the
+    /// two apart, along with everything else that has to still hold at this moment.
+    /// </summary>
+    private static void OnKeepAwakeStateChanged()
+    {
+        long gen;
+        lock (_sync)
+        {
+            if (!LidDelayPolicy.ShouldCompleteSuppressedWait(_sleepOwed,
+                    SettingsService.Current.LidDelayEnabled, _lidClosed,
+                    KeepAwakeService.Current is not null))
+                return;
+
+            _sleepOwed = false;
+            gen = _generation;
+        }
+
+        PowerLog.Say(LidWaitTrail.SleepServedWhenTheSessionEnded);
+        PowerLog.Event("Suspending the machine",
+                       "the keep-awake session that was holding back a lid-close sleep has ended, " +
+                       "and the lid is still shut");
+        SuspendOffThisThread(gen);
+    }
+
+    /// <summary>
+    /// Puts the machine to sleep for a wait that has ended, on a thread of its own:
+    /// <c>SetSuspendState</c> does not return until the machine resumes, and every caller here is a
+    /// timer callback or an event raise that must not block.
+    /// </summary>
+    /// <param name="generation">The value <see cref="_generation"/> had when the suspend was decided
+    /// on. Anything that invalidates a queued suspend — the lid opening above all — moves it, and a
+    /// moved value abandons this one.</param>
+    private static void SuspendOffThisThread(long generation)
+    {
+        Task.Run(() =>
+        {
+            // The lid can be opened between the decision and this running, by which point
+            // _delayPending is false and nothing else would stop the suspend.
+            bool abandoned;
+            lock (_sync) abandoned = _generation != generation;
+            if (abandoned)
+            {
+                PowerLog.Event("Suspend abandoned", "the lid was opened before it ran");
+                TurnOffIfDue(LidDelayOutcome.LidReopened);
+                return;
+            }
+
+            // Before the suspend, never after it: SetSuspendState does not return until the machine
+            // resumes, so a stand-down placed after it is never written on a machine that never
+            // resumes with the application running, and the one-off delay would still be armed for
+            // the next lid close. Putting the user's own lid action back with the lid already shut
+            // cannot re-trigger it — Windows acts on the transition, not on the state.
+            bool stoodDown = TurnOffIfDue(LidDelayOutcome.Slept);
+
+            if (!NativeMethods.Suspend())
+            {
+                PowerLog.Event("Suspend was refused by Windows", "SetSuspendState returned false");
+                AppLog.Error("LidDelayService.Suspend failed", null);
+                // The stand-down was taken for a sleep that did not happen, and only a lid close that
+                // reached sleep expires the setting.
+                if (stoodDown)
+                    SetEnabled(true, "the suspend the one-off delay stood down for was refused");
+            }
+        });
     }
 
     /// <summary>Ends the wait without sleeping. Returns how much of the cancelled wait the machine
@@ -888,6 +963,9 @@ internal static class LidDelayService
             _generation++;   // invalidates a suspend that was already decided on
             _discharge.Disarm();
             _thermal.Disarm();
+            // Dropped with the wait, and before the early return: this is also the path a feature
+            // switched off takes, and a feature that is off has no sleep left to serve.
+            _sleepOwed = false;
             if (!_delayPending) return null;
             // Read before ClearLocked, which is what ends the wait being measured.
             gap = AwakeClock.Since(_waitClock);

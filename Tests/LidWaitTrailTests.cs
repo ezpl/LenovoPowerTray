@@ -226,11 +226,25 @@ public class LidWaitTrailTests
         string body = SourceMethods.Body(ServiceSource(), "Complete");
 
         int line    = body.IndexOf("PowerLog.Say(SleepGap.AddSentenceTo(ended, gap))", StringComparison.Ordinal);
-        int suspend = body.IndexOf("NativeMethods.Suspend()", StringComparison.Ordinal);
+        int suspend = body.IndexOf("SuspendOffThisThread(", StringComparison.Ordinal);
 
         Assert.True(line    >= 0, "The end-of-wait line is not written in Complete.");
-        Assert.True(suspend >= 0, "Complete no longer contains the suspend call.");
+        Assert.True(suspend >= 0, "Complete no longer reaches the suspend.");
         Assert.True(line < suspend, "The end-of-wait line must be written before the suspend call.");
+    }
+
+    /// <summary>Every route to sleep goes through the one method, so the ordering guards below cover
+    /// all of them. A second suspend call somewhere else would bypass every one.</summary>
+    [Fact]
+    public void ThereIsOneSuspendCall_AndTheOrderingGuardsCoverIt()
+    {
+        string source = ServiceSource();
+        int first = source.IndexOf("NativeMethods.Suspend()", StringComparison.Ordinal);
+
+        Assert.True(first >= 0, "The service no longer suspends the machine at all.");
+        Assert.Equal(-1, source.IndexOf("NativeMethods.Suspend()", first + 1, StringComparison.Ordinal));
+        Assert.Contains("NativeMethods.Suspend()", SourceMethods.Body(source, "SuspendOffThisThread"),
+                        StringComparison.Ordinal);
     }
 
     /// <summary>The same reason: a stand-down written after the suspend call is applied on waking,
@@ -239,12 +253,12 @@ public class LidWaitTrailTests
     [Fact]
     public void TheOneOffStandDown_IsAppliedBeforeTheSuspendCall()
     {
-        string body = SourceMethods.Body(ServiceSource(), "Complete");
+        string body = SourceMethods.Body(ServiceSource(), "SuspendOffThisThread");
 
         int standDown = body.IndexOf("TurnOffIfDue(LidDelayOutcome.Slept)", StringComparison.Ordinal);
         int suspend   = body.IndexOf("NativeMethods.Suspend()", StringComparison.Ordinal);
 
-        Assert.True(standDown >= 0, "The one-off stand-down is not applied in Complete.");
+        Assert.True(standDown >= 0, "The one-off stand-down is not applied before the suspend.");
         Assert.True(standDown < suspend, "The stand-down must be applied before the suspend call.");
     }
 
@@ -253,7 +267,7 @@ public class LidWaitTrailTests
     [Fact]
     public void TheOneOffStandDown_IsNotAlsoAppliedOnTheResumePath()
     {
-        string body = SourceMethods.Body(ServiceSource(), "Complete");
+        string body = SourceMethods.Body(ServiceSource(), "SuspendOffThisThread");
         int suspend = body.IndexOf("NativeMethods.Suspend()", StringComparison.Ordinal);
 
         Assert.DoesNotContain("TurnOffIfDue(LidDelayOutcome.Slept)", body[suspend..], StringComparison.Ordinal);
@@ -278,9 +292,10 @@ public class LidWaitTrailTests
     [Fact]
     public void ARefusedSuspend_PutsAStandDownBack()
     {
-        string body = SourceMethods.Body(ServiceSource(), "Complete");
+        string body = SourceMethods.Body(ServiceSource(), "SuspendOffThisThread");
         int suspend = body.IndexOf("NativeMethods.Suspend()", StringComparison.Ordinal);
 
+        Assert.True(suspend >= 0, "The suspend no longer runs where the recovery guards it.");
         Assert.Contains("SetEnabled(true,", body[suspend..], StringComparison.Ordinal);
     }
 
@@ -340,5 +355,70 @@ public class LidWaitTrailTests
 
         string body = SourceMethods.Body(ServiceSource(), "TurnOffIfDue");
         Assert.Contains("PowerLog.Say(LidWaitTrail.SwitchedOffBeforeSleeping)", body, StringComparison.Ordinal);
+    }
+
+    // ---- a sleep a keep-awake session held back ----------------------------------------------
+
+    /// <summary>
+    /// The three lines are one story, and each has to say the sleep was owed rather than gone. A
+    /// suppressed sleep that reads as cancelled is what left the machine awake with its lid shut.
+    /// </summary>
+    [Fact]
+    public void ASuppressedSleep_IsNamedAsOwedRatherThanCancelled()
+    {
+        Assert.Contains("owed rather than cancelled", LidWaitTrail.SleepOwedUntilTheSessionEnds,
+                        StringComparison.Ordinal);
+        Assert.Contains("if the lid is still shut", LidWaitTrail.SleepOwedUntilTheSessionEnds,
+                        StringComparison.Ordinal);
+        Assert.Contains("being served now", LidWaitTrail.SleepServedWhenTheSessionEnded,
+                        StringComparison.Ordinal);
+        Assert.Contains("the lid was opened first", LidWaitTrail.OwedSleepDroppedOnLidOpen,
+                        StringComparison.Ordinal);
+    }
+
+    /// <summary>Both endings are written, so the record says which of the two happened. A deferred
+    /// sleep that is only ever announced when it is owed cannot be told from one that never came.</summary>
+    [Fact]
+    public void BothEndingsOfADeferredSleep_ReachTheTrail()
+    {
+        string source = ServiceSource();
+
+        Assert.Contains("PowerLog.Say(LidWaitTrail.SleepOwedUntilTheSessionEnds)", source, StringComparison.Ordinal);
+        Assert.Contains("PowerLog.Say(LidWaitTrail.SleepServedWhenTheSessionEnded)", source, StringComparison.Ordinal);
+        Assert.Contains("PowerLog.Say(LidWaitTrail.OwedSleepDroppedOnLidOpen)", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The session ending is the only signal that says a suppressed sleep can be served, and nothing
+    /// on the lid side listened to it. Losing the subscription puts the defect straight back with
+    /// every other test still passing.
+    /// </summary>
+    [Fact]
+    public void TheLidSide_ListensForTheSessionEnding()
+    {
+        string source = ServiceSource();
+
+        Assert.Contains("KeepAwakeService.StateChanged += OnKeepAwakeStateChanged", source, StringComparison.Ordinal);
+        Assert.Contains("KeepAwakeService.StateChanged -= OnKeepAwakeStateChanged", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The deferred sleep goes through the same suspend as every other, so the one-off stand-down is
+    /// taken for it too — it does reach sleep, and a stand-down owed to a sleep that happened must
+    /// not be skipped because the sleep was late.
+    /// </summary>
+    [Fact]
+    public void TheDeferredSleep_TakesTheSameSuspendPathAsEveryOther()
+    {
+        string source = ServiceSource();
+        string body   = SourceMethods.Body(source, "OnKeepAwakeStateChanged");
+
+        Assert.Contains("SuspendOffThisThread(gen)", body, StringComparison.Ordinal);
+        Assert.Contains("TurnOffIfDue(LidDelayOutcome.Slept)",
+                        SourceMethods.Body(source, "SuspendOffThisThread"), StringComparison.Ordinal);
+        // Not merely reachable — the deferred sleep must be the reason the suspend runs, and it is
+        // the same call every other ending makes.
+        Assert.Contains("SuspendOffThisThread(gen)", SourceMethods.Body(source, "Complete"),
+                        StringComparison.Ordinal);
     }
 }

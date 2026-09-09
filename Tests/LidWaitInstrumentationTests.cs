@@ -47,6 +47,44 @@ public class LidWaitInstrumentationTests
         Assert.Contains("StandbyCapability.Describe(StandbyCapability.Read())",
                         AppSource(), StringComparison.Ordinal);
 
+    // ---- what the delay can honestly promise on this machine -----------------------------------
+
+    /// <summary>
+    /// A Modern Standby machine enters standby on its own idle rules while a wait is running, and the
+    /// hold does not reliably prevent it. The feature appearing to work is the fault, so the
+    /// limitation is stated where somebody deciding whether to switch it on will read it.
+    /// </summary>
+    [Fact]
+    public void AModernStandbyMachine_IsToldTheDelayMayNotHold()
+    {
+        string? caveat = StandbyCapability.LidWaitCaveat(
+            new StandbyCapability(ModernStandby: true, SupportsS3: false));
+
+        Assert.NotNull(caveat);
+        Assert.Contains("Modern Standby", caveat!, StringComparison.Ordinal);
+        Assert.Contains("sleep sooner than the delay says", caveat!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void EveryOtherReading_IsToldNothing(bool modern, bool s3) =>
+        // A machine not known to have the problem is not warned about it: the S3 machine the delay
+        // was built for holds, and a warning on a guess is a worse surface than none.
+        Assert.Null(StandbyCapability.LidWaitCaveat(new StandbyCapability(modern, s3)));
+
+    [Fact]
+    public void AFailedCapabilityQuery_IsToldNothingEither() =>
+        Assert.Null(StandbyCapability.LidWaitCaveat(null));
+
+    [Fact]
+    public void TheLidDelayPage_ShowsTheCaveat() =>
+        // The one surface it belongs on. Losing the call leaves the page promising a delay this class
+        // of machine does not reliably keep, which is the state it was added against.
+        Assert.Contains("StandbyCapability.LidWaitCaveat(StandbyCapability.Read())",
+                        File.ReadAllText(RepoFiles.Find("UI/SettingsWindow.xaml.cs")),
+                        StringComparison.Ordinal);
+
     // ---- was the execution-state hold accepted -------------------------------------------------
 
     [Fact]
