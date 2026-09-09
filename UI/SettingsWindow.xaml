@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <Window
     x:Class="ChargeKeeper.UI.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -236,8 +236,16 @@
                                 <TextBlock x:Name="KeepAwakeRemainingText" VerticalAlignment="Center"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                 <local:InfoIcon Subject="keeping this computer awake"
-                                                Info="A session holds the computer awake until it expires. It ends by itself, and is never restored after a restart."/>
+                                                Info="A session holds the computer awake until it expires. It ends by itself, and is never restored after a restart. While one runs it also suppresses the lid-close sleep, so the computer is never slept out from under one, and lid handling stays on for the next lid close."/>
                             </StackPanel>
+
+                            <!-- What a session does beyond its own clock: its effect on the lid, and
+                                 the Windows rule the release hands back to. Both are live readings,
+                                 so they are set in code rather than written here. -->
+                            <TextBlock x:Name="KeepAwakeAfterText"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Visibility="Collapsed"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
                             <!-- The dashboard's chip row, with room here for the full wording.
                                  Built in code from KeepAwakePresets. -->

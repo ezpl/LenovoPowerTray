@@ -92,6 +92,19 @@ internal static class KeepAwakePolicy
     }
 
     /// <summary>
+    /// What a running session is doing to the lid, or null when there is nothing to say — no session,
+    /// or lid handling off and Windows' own lid-close action already in charge. A status rather than
+    /// a warning: the suppression is what an explicit instruction is entitled to.
+    /// <para>Scoped to the session's own lifetime on purpose. The suppression lasts exactly as long
+    /// as the session, so an unqualified "a lid close will not sleep this computer" would outlive
+    /// the thing that causes it.</para>
+    /// </summary>
+    public static string? DescribeLidEffect(bool sessionRunning, bool lidDelayEnabled) =>
+        sessionRunning && lidDelayEnabled
+            ? "A lid close will not sleep this computer while this session lasts."
+            : null;
+
+    /// <summary>
     /// A chip-sized label: a named preset's own name, otherwise its <see cref="SpanLabel"/>. The name
     /// wins because Settings shows a named preset by name, and a chip captioned with the span for the
     /// same object is the drift this single formatter exists to prevent. Separate from

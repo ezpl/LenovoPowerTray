@@ -47,6 +47,12 @@ internal static class NativeMethods
     private static readonly Guid GUID_LIDACTION   = new("5ca83367-6e45-459f-a27b-476b1d01c936");
     private static readonly Guid GUID_LIDSWITCH_STATE_CHANGE = new("ba3e0f4d-b817-4094-a2d1-d56379e6a0f3");
 
+    // Windows' own idle sleep, the rule a released execution-state hold hands back to. Same shape as
+    // the lid action above — per-scheme, one AC and one DC value — with a different subgroup and
+    // setting. The unit is seconds and zero means never.
+    private static readonly Guid GUID_SUB_SLEEP   = new("238c9fa8-0aad-41ed-83f4-97be242c8f20");
+    private static readonly Guid GUID_STANDBYIDLE = new("29f6c1db-86da-48c5-9fdb-f2b67b1f44da");
+
     /// <summary>LIDACTION index for "do nothing" — what the delay feature parks the setting on.</summary>
     internal const uint LIDACTION_DO_NOTHING = 0;
 
@@ -189,6 +195,21 @@ internal static class NativeMethods
             if (PowerReadACValueIndex(IntPtr.Zero, ref s, ref sub, ref setting, out uint ac) != 0) return null;
             if (PowerReadDCValueIndex(IntPtr.Zero, ref s, ref sub, ref setting, out uint dc) != 0) return null;
             return (scheme, ac, dc);
+        }, null);
+
+    /// <summary>
+    /// The active scheme's AC and DC idle sleep delays, in seconds, where zero means Windows never
+    /// sleeps this machine on idle. Read only, so the scheme is not returned with them. Null when
+    /// the query fails, and null must never be read as zero: zero is a promise that nothing sleeps
+    /// the machine on its own, which a failed read is no evidence of.
+    /// </summary>
+    internal static (uint AcSeconds, uint DcSeconds)? ReadSleepDelay() =>
+        WithActiveScheme<(uint, uint)?>((scheme, _) =>
+        {
+            var s = scheme; var sub = GUID_SUB_SLEEP; var setting = GUID_STANDBYIDLE;
+            if (PowerReadACValueIndex(IntPtr.Zero, ref s, ref sub, ref setting, out uint ac) != 0) return null;
+            if (PowerReadDCValueIndex(IntPtr.Zero, ref s, ref sub, ref setting, out uint dc) != 0) return null;
+            return (ac, dc);
         }, null);
 
     /// <summary>

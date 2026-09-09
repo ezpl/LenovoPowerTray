@@ -1427,9 +1427,41 @@ internal sealed partial class SettingsWindow : Window
         KeepAwakeRemainingText.Text = session is null
             ? "Not holding this computer awake."
             : KeepAwakePolicy.DescribeRemaining(DateTimeOffset.Now, session);
+        RefreshKeepAwakeAfterText(session is not null);
 
         // Covers every way a session can start or end, including expiry and the dashboard's chips.
         RefreshKeepAwakeActivationStates();
+    }
+
+    /// <summary>
+    /// The line under the toggle: what a running session does to a lid close, and what Windows does
+    /// once the hold is let go. Both are read afresh on every refresh rather than cached — the power
+    /// plan and the power source can both change under an open page, and the mains and battery sleep
+    /// delays differ by a large factor, so a cached figure would be a wrong number rather than a
+    /// stale one. Nothing is shown when no session is running: the page already says so.
+    /// </summary>
+    private void RefreshKeepAwakeAfterText(bool sessionRunning)
+    {
+        var lines = new List<string>(2);
+
+        if (KeepAwakePolicy.DescribeLidEffect(sessionRunning, SettingsService.Current.LidDelayEnabled)
+            is { } lidEffect)
+            lines.Add(lidEffect);
+
+        if (sessionRunning)
+        {
+            // Both names are qualified: Windows.System carries a PowerState of its own, and this is
+            // the app's.
+            bool onBattery = PowerStates.From(Windows.System.Power.PowerManager.BatteryStatus)
+                             == Helpers.PowerState.Discharging;
+            if (SleepDelayPolicy.Describe(
+                    SleepDelayPolicy.ForPowerSource(NativeMethods.ReadSleepDelay(), onBattery),
+                    onBattery) is { } sleepRule)
+                lines.Add(sleepRule);
+        }
+
+        KeepAwakeAfterText.Text       = string.Join(" ", lines);
+        KeepAwakeAfterText.Visibility = lines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnKeepAwakeToggled(object sender, RoutedEventArgs e)
