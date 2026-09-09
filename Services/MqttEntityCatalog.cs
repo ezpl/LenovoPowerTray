@@ -36,7 +36,7 @@ internal sealed record MqttEntitySources
 }
 
 /// <summary>
-/// ChargeKeeper's published surface: forty-nine entities, their groups, their capability gates and
+/// ChargeKeeper's published surface: fifty-four entities, their groups, their capability gates and
 /// the domain seam each inbound command lands on. Pure — nothing here touches a broker or a settings
 /// singleton, so the same table composes in a test.
 /// </summary>
@@ -103,6 +103,12 @@ internal static class MqttEntityCatalog
     public const string StartupDelay = "startup_delay";
     public const string IconMode     = "icon_mode";
     public const string DowntimeGap  = "downtime_gap";
+
+    public const string LastChange             = "last_change";
+    public const string LastChangeTime         = "last_change_time";
+    public const string LidWait                = "lid_wait";
+    public const string LidWaitRemaining       = "lid_wait_remaining";
+    public const string KeepAwakeHoldRemaining = "keep_awake_hold_remaining";
 
     /// <summary>The tray icon styles, spelled as the enum so a round trip needs no lookup table.</summary>
     public static readonly string[] IconModeOptions =
@@ -666,6 +672,50 @@ internal static class MqttEntityCatalog
                 Mode = MqttNumberMode.Box, Debounce = MqttConnection.ReflectDebounce,
                 Read = () => surface()?.DowntimeGapMinutes,
                 Apply = value => MqttCommandVerdict.Accept(() => set.SetDowntimeGap(Whole(value))),
+            },
+
+            // What the application itself is doing, as against the settings above. Five readings,
+            // no commands: a receiver watches them, and every one of them moves on its own.
+            MqttEnumSensor.Of(
+                LastChange, "App last change", MqttPublishGroups.AppDiagnostics, "mdi:history",
+                AppChangeLog.Words,
+                () => surface()?.LastChange is { } change ? AppChangeLog.Label(change) : null),
+            new MqttSensor
+            {
+                // Sorts immediately below the change it timestamps, whose name it extends.
+                EntityId = LastChangeTime, Name = "App last change time",
+                Group = MqttPublishGroups.AppDiagnostics,
+                Category = MqttEntityCategory.Diagnostic, DeviceClass = "timestamp",
+                // A timestamp sensor wants a full ISO 8601 instant with an offset; nothing recorded
+                // this session means no value at all.
+                Read = () => surface()?.LastChangeAt?.ToString("o", CultureInfo.InvariantCulture),
+            },
+            MqttEnumSensor.Of(
+                LidWait, "App lid-close wait", MqttPublishGroups.AppDiagnostics, "mdi:laptop",
+                LidWaitStates.Words,
+                () => surface() is { } v ? LidWaitStates.Label(v.LidWait) : null,
+                () => s.Capabilities().LidClose),
+            new MqttSensor
+            {
+                // The wait's own clock, not the setting: absent whenever no timer is running, so a
+                // machine sitting at rest reports nothing rather than a countdown of zero.
+                EntityId = LidWaitRemaining, Name = "App lid-close wait remaining",
+                Group = MqttPublishGroups.AppDiagnostics,
+                Category = MqttEntityCategory.Diagnostic, DeviceClass = "duration", Unit = "min",
+                Icon = "mdi:timer-sand",
+                Include = () => s.Capabilities().LidClose,
+                Read = () => MqttPayload.Number((long?)surface()?.LidWaitRemainingMinutes),
+            },
+            new MqttSensor
+            {
+                // Kept apart from the lid countdown above: releasing the hold is not the same event
+                // as sleeping the machine, and a session with no clock expiry counts down to
+                // nothing at all.
+                EntityId = KeepAwakeHoldRemaining, Name = "App keep-awake hold remaining",
+                Group = MqttPublishGroups.AppDiagnostics,
+                Category = MqttEntityCategory.Diagnostic, DeviceClass = "duration", Unit = "min",
+                Icon = "mdi:coffee-outline",
+                Read = () => MqttPayload.Number((long?)surface()?.KeepAwakeRemainingMinutes),
             },
         ]);
     }

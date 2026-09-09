@@ -339,6 +339,9 @@ public partial class App : Application
         // battery tick of its own. The latch carries the style, so this repaints only when it moved.
         SettingsService.ChangeCommitted     += c => { if (c.IsMaterial) RepaintTrayIconFromLastReading(); };
         KeepAwakeService.StateChanged       += () => _mqtt?.PublishSurfaceNow();
+        // A lid close, a wait ending and a keep-awake transition all move the surface without
+        // touching a setting, so the recorder is the signal for all three.
+        AppChangeLog.Recorded               += () => _mqtt?.PublishSurfaceNow();
         NetworkLocationService.LocationChanged += _ => _mqtt?.PublishSurfaceNow();
     }
 

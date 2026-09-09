@@ -81,6 +81,11 @@ public class MqttEntityNamingTests
         "chargekeeper_office_x1_startup_delay",
         "chargekeeper_office_x1_icon_mode",
         "chargekeeper_office_x1_downtime_gap",
+        "chargekeeper_office_x1_last_change",
+        "chargekeeper_office_x1_last_change_time",
+        "chargekeeper_office_x1_lid_wait",
+        "chargekeeper_office_x1_lid_wait_remaining",
+        "chargekeeper_office_x1_keep_awake_hold_remaining",
     ];
 
     /// <summary>The identifiers as a receiver reads them: out of a composed document, rather than
@@ -228,5 +233,33 @@ public class MqttEntityNamingTests
 
         // Contiguous: the block as sorted is the same run of six the whole section holds.
         Assert.Equal(block, configuration.Skip(configuration.IndexOf(block[0])).Take(block.Count));
+    }
+
+    [Fact]
+    public void EachAppDiagnosticReading_SortsWithTheShorterNameAboveItsOwnLongerOne()
+    {
+        // Two pairs, and each pair's shorter name is a prefix of its longer one: the change above
+        // the time it happened at, and the lid-close wait above what is left of it.
+        var diagnostic = MqttTestBed.Declared().All
+            .Where(e => e.Category == MqttEntityCategory.Diagnostic)
+            .Select(e => e.Name!)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var block = diagnostic
+            .Where(name => name.StartsWith("App ", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Equal(
+            [
+                "App keep-awake hold remaining",
+                "App last change", "App last change time",
+                "App lid-close wait", "App lid-close wait remaining",
+                "App version",
+            ],
+            block);
+
+        // Contiguous: nothing from another group sorts into the middle of the run.
+        Assert.Equal(block, diagnostic.Skip(diagnostic.IndexOf(block[0])).Take(block.Count));
     }
 }

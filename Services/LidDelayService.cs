@@ -51,6 +51,10 @@ internal static class LidDelayService
     private static System.Threading.Timer? _heartbeat;
     private static DateTimeOffset _waitStartedAt;
 
+    // The delay the current wait armed with, so the published countdown reports the timer that is
+    // actually running. A setting changed mid-wait moves neither the timer nor this.
+    private static TimeSpan _waitDelay;
+
     // Wall clock and awake time taken together as the wait arms. Elapsed time alone cannot say
     // whether the machine was held awake or slept through most of the wait — the process resumes and
     // carries on counting either way.
@@ -92,6 +96,22 @@ internal static class LidDelayService
     /// the feature on a laptop is worse than offering it on a machine that will never close a lid.
     /// </summary>
     public static bool IsSupported => _lidPresent ??= NativeMethods.LidPresent() ?? true;
+
+    /// <summary>The wait as it stands, for the published surface. Composed under the lock so the
+    /// state and the instant it would sleep at cannot describe two different moments.</summary>
+    /// <remarks>Nothing is precomputed: the sleep instant is the moment the wait armed plus the
+    /// delay it armed with, and the countdown over it is taken fresh by whoever reads this.</remarks>
+    public static LidWaitSnapshot WaitNow()
+    {
+        lock (_sync)
+        {
+            var state = LidWaitStates.From(SettingsService.Current.LidDelayEnabled,
+                                           _delayPending, _timeSet, _targetSet);
+            return new LidWaitSnapshot(
+                state,
+                _delayPending && _timeSet ? _waitStartedAt + _waitDelay : null);
+        }
+    }
 
     /// <summary>
     /// Called once at startup, and also the crash-recovery entry point: it runs the
@@ -390,6 +410,7 @@ internal static class LidDelayService
 
         PowerLog.Say(ended);
         PowerLog.Say(LidWaitTrail.SwitchedOffOnChargerConnected);
+        AppChangeLog.Record(AppChange.WaitEndedOnACharger);
         SetEnabled(false, "a charger was connected while the lid was shut");
         ToastService.NotifyLidDelayStoodDown(percent);
     }
@@ -651,6 +672,7 @@ internal static class LidDelayService
             _targetGivenUp = false;
             _timeSet       = s.LidDelayTimeEnabled;
             _waitStartedAt = DateTimeOffset.Now;
+            _waitDelay     = delay;
             _waitClock     = AwakeClock.Mark();
 
             // Set only where a battery reading exists, and judged against it at once: a machine
@@ -730,6 +752,8 @@ internal static class LidDelayService
         else
             PowerLog.Event("No temperature ceiling on this lid close", "the setting is off");
 
+        AppChangeLog.Record(AppChange.LidClosed);
+
         // Whichever condition already stands satisfied ends the wait here, including the case where
         // neither was set at all.
         Complete();
@@ -776,6 +800,7 @@ internal static class LidDelayService
         LidDelayAction action;
         long gen;
         string? ended = null;
+        LidWaitEnd endedBy = LidWaitEnd.NothingToWaitFor;
         SleepGap? gap = null;
         lock (_sync)
         {
@@ -786,8 +811,9 @@ internal static class LidDelayService
             if (action is LidDelayAction.Suspend or LidDelayAction.Cancel)
             {
                 // Composed before ClearLocked wipes what it describes.
-                ended = _trail.End(_lastBattery?.Percent);
-                gap   = AwakeClock.Since(_waitClock);
+                ended   = _trail.End(_lastBattery?.Percent);
+                endedBy = _trail.EndedBy;
+                gap     = AwakeClock.Since(_waitClock);
                 ClearLocked();
             }
             gen = _generation;
@@ -797,7 +823,11 @@ internal static class LidDelayService
         // application was not the one that acted, so nothing that can block may precede it. The
         // awake reading travels on it rather than on a line of its own — the closing line is where
         // "held for two hours" and "slept for most of it" have to stop looking alike.
-        if (ended is not null) PowerLog.Say(SleepGap.AddSentenceTo(ended, gap));
+        if (ended is not null)
+        {
+            PowerLog.Say(SleepGap.AddSentenceTo(ended, gap));
+            AppChangeLog.Record(AppChangeLog.From(endedBy));
+        }
 
         switch (action)
         {
@@ -851,6 +881,7 @@ internal static class LidDelayService
     /// </summary>
     private static SleepGap? CancelDelay()
     {
+        SleepGap? gap;
         lock (_sync)
         {
             _generation++;   // invalidates a suspend that was already decided on
@@ -858,10 +889,14 @@ internal static class LidDelayService
             _thermal.Disarm();
             if (!_delayPending) return null;
             // Read before ClearLocked, which is what ends the wait being measured.
-            var gap = AwakeClock.Since(_waitClock);
+            gap = AwakeClock.Since(_waitClock);
             ClearLocked();
-            return gap;
         }
+
+        // Outside the lock, and only where a wait was actually cancelled: a lid opening with
+        // nothing running changes nothing.
+        AppChangeLog.Record(AppChange.LidOpened);
+        return gap;
     }
 
     // Callers hold _sync.
@@ -873,6 +908,7 @@ internal static class LidDelayService
         _targetSet     = false;
         _targetArrived = false;
         _targetGivenUp = false;
+        _waitDelay     = TimeSpan.Zero;
         _trail.Clear();
         _discharge.Disarm();
         _thermal.Disarm();

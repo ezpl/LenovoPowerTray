@@ -84,6 +84,7 @@ internal static class KeepAwakeService
             ArmExpiry(session, now);
         }
         PowerLog.Event($"Keep-awake on, {KeepAwakePolicy.DescribeRemaining(now, session)}", cause);
+        AppChangeLog.Record(AppChange.KeepAwakeStarted);
         RaiseStateChanged();
     }
 
@@ -97,6 +98,7 @@ internal static class KeepAwakeService
             ClearLocked();
         }
         PowerLog.Event("Keep-awake off", cause);
+        AppChangeLog.Record(AppChange.KeepAwakeEnded);
         RaiseStateChanged();
     }
 
@@ -117,6 +119,7 @@ internal static class KeepAwakeService
         if (expired)
         {
             PowerLog.Event("Keep-awake off", "the session expired while the machine was asleep");
+            AppChangeLog.Record(AppChange.KeepAwakeEnded);
             RaiseStateChanged();
         }
     }
@@ -203,6 +206,7 @@ internal static class KeepAwakeService
             ClearLocked();
         }
         PowerLog.Event("Keep-awake off", "the session reached its own expiry time");
+        AppChangeLog.Record(AppChange.KeepAwakeEnded);
         RaiseStateChanged();
     }
 

@@ -38,6 +38,8 @@ internal static class MqttPublishGroups
         new(AppDiagnostics, "App diagnostics",
             Description: "Off by default — these describe ChargeKeeper, not the battery.",
             DefaultOn: false,
-            Info: "The app version, the startup delay, the tray icon style and the downtime gap."),
+            Info: "The app version, the startup delay, the tray icon style and the downtime gap, "
+                + "plus what the app last did and what its lid-close wait and keep-awake hold are "
+                + "doing now."),
     ];
 }

@@ -38,7 +38,12 @@ internal readonly record struct SurfaceState(
     string AppVersion,
     int StartupDelaySeconds,
     TrayIconMode IconMode,
-    int DowntimeGapMinutes);
+    int DowntimeGapMinutes,
+    LidWaitState LidWait,
+    int? LidWaitRemainingMinutes,
+    int? KeepAwakeRemainingMinutes,
+    AppChange? LastChange,
+    DateTimeOffset? LastChangeAt);
 
 /// <summary>What the hardware can actually do, from the vendor gates the UI already uses. Announcing
 /// a control the machine cannot honour would leave the receiver with an entity that silently does
@@ -73,8 +78,20 @@ internal static class SurfaceReader
             (location, adapter) = NetworkLocationService.DetectCurrentDetailed();
 
         bool standby = IsStandbyRunning();
-        return SettingsService.Read(s => From(s, session, location, adapter, standby, appVersion));
+        var lidWait = LidDelayService.WaitNow();
+        var lastChange = AppChangeLog.Last;
+        var now = DateTimeOffset.Now;
+        return SettingsService.Read(s => From(s, session, location, adapter, standby, appVersion,
+                                              lidWait, lastChange, now));
     }
+
+    /// <summary>Whole minutes from now to an instant, rounded up and never below zero, or null when
+    /// there is no instant to count to. Rounded up so a countdown reads one until the moment it
+    /// lands, rather than sitting on zero for the last half minute.</summary>
+    /// <remarks>Nothing caches the answer: the countdown is composed on every read, so a value that
+    /// went out a minute ago is never republished as though it still stood.</remarks>
+    internal static int? MinutesUntil(DateTimeOffset? instant, DateTimeOffset now) =>
+        instant is { } at ? Math.Max(0, (int)Math.Ceiling((at - now).TotalMinutes)) : null;
 
     /// <summary>
     /// The projection itself, over supplied state rather than the singletons, so what does and does
@@ -84,7 +101,8 @@ internal static class SurfaceReader
     /// </summary>
     internal static SurfaceState From(
         AppSettings s, KeepAwakeSession? session, NetworkLocation location, NetworkAdapterInfo adapter,
-        bool standbyRunning, string appVersion) => new(
+        bool standbyRunning, string appVersion, LidWaitSnapshot lidWait, AppChangeRecord? lastChange,
+        DateTimeOffset now) => new(
             TravelOverrideActive:   s.TravelOverrideActive,
             KeepAwakeActive:        session is not null,
             KeepAwakeFor:           KeepAwakePolicy.ShortLabel(
@@ -115,7 +133,13 @@ internal static class SurfaceReader
             AppVersion:             appVersion,
             StartupDelaySeconds:    s.StartupDelaySeconds,
             IconMode:               s.IconMode,
-            DowntimeGapMinutes:     s.DowntimeGapMinutes);
+            DowntimeGapMinutes:     s.DowntimeGapMinutes,
+            LidWait:                   lidWait.State,
+            LidWaitRemainingMinutes:   MinutesUntil(lidWait.SleepsAt, now),
+            // Absent for a session with no clock expiry — "until turned off" counts down to nothing.
+            KeepAwakeRemainingMinutes: MinutesUntil(session?.ExpiresAt, now),
+            LastChange:                lastChange?.What,
+            LastChangeAt:              lastChange?.When);
 
     /// <summary>The vendor capabilities the announcement is gated on.</summary>
     /// <remarks>Deliberately unguarded. A vendor read that fails has to reach the caller as a throw:

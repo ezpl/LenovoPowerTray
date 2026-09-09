@@ -97,6 +97,13 @@ internal sealed class LidWaitTrail
         lock (_sync) _endedBy ??= end;
     }
 
+    /// <summary>Which condition ended the wait, or <see cref="LidWaitEnd.NothingToWaitFor"/> where
+    /// none arrived. Read before <see cref="Clear"/>, which is what forgets it.</summary>
+    public LidWaitEnd EndedBy
+    {
+        get { lock (_sync) return _endedBy ?? LidWaitEnd.NothingToWaitFor; }
+    }
+
     /// <summary>Forgets the wait. A report asked for after this says nothing.</summary>
     public void Clear()
     {

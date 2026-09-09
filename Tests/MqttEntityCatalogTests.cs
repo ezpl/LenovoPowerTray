@@ -9,7 +9,7 @@ using Xunit;
 namespace ChargeKeeper.Tests;
 
 /// <summary>
-/// The published surface as a declaration: the forty-nine entity ids, the component each is announced
+/// The published surface as a declaration: the fifty-four entity ids, the component each is announced
 /// under, and the discovery keys that decide how a receiver draws it.
 /// </summary>
 /// <remarks>
@@ -142,6 +142,20 @@ public class MqttEntityCatalogTests
             MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Config, Icon: "mdi:image-outline"),
         new(MqttEntityCatalog.DowntimeGap, "number", "App downtime gap threshold",
             MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Config, Icon: "mdi:chart-timeline-variant", Unit: "min"),
+        new(MqttEntityCatalog.LastChange, "sensor", "App last change",
+            MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Diagnostic,
+            Icon: "mdi:history", DeviceClass: "enum"),
+        new(MqttEntityCatalog.LastChangeTime, "sensor", "App last change time",
+            MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Diagnostic, DeviceClass: "timestamp"),
+        new(MqttEntityCatalog.LidWait, "sensor", "App lid-close wait",
+            MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Diagnostic,
+            Icon: "mdi:laptop", DeviceClass: "enum"),
+        new(MqttEntityCatalog.LidWaitRemaining, "sensor", "App lid-close wait remaining",
+            MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Diagnostic,
+            Icon: "mdi:timer-sand", DeviceClass: "duration", Unit: "min"),
+        new(MqttEntityCatalog.KeepAwakeHoldRemaining, "sensor", "App keep-awake hold remaining",
+            MqttPublishGroups.AppDiagnostics, MqttEntityCategory.Diagnostic,
+            Icon: "mdi:coffee-outline", DeviceClass: "duration", Unit: "min"),
     ];
 
     public static TheoryData<string> EveryEntityId()
@@ -161,13 +175,13 @@ public class MqttEntityCatalogTests
     };
 
     [Fact]
-    public void TheTable_HoldsExactlyTheFortyNineEntitiesTheAppPublishes() =>
+    public void TheTable_HoldsExactlyTheFiftyFourEntitiesTheAppPublishes() =>
         Assert.Equal(
             _table.Select(r => r.EntityId).Order(StringComparer.Ordinal),
             MqttTestBed.Declared().All.Select(e => e.EntityId).Order(StringComparer.Ordinal));
 
     [Fact]
-    public void TheEntityMix_IsSeventeenSensorsFourteenSwitchesNineNumbersFourBinaryThreeSelectsAButtonAndAText()
+    public void TheEntityMix_IsTwentyTwoSensorsFourteenSwitchesNineNumbersFourBinaryThreeSelectsAButtonAndAText()
     {
         var byPlatform = MqttTestBed.Declared().All
             .GroupBy(e => e.Platform)
@@ -176,7 +190,7 @@ public class MqttEntityCatalogTests
         Assert.Equal(
             new Dictionary<string, int>(StringComparer.Ordinal)
             {
-                ["sensor"] = 17, ["switch"] = 14, ["number"] = 9,
+                ["sensor"] = 22, ["switch"] = 14, ["number"] = 9,
                 ["binary_sensor"] = 4, ["select"] = 3, ["button"] = 1, ["text"] = 1,
             },
             byPlatform);
@@ -491,7 +505,12 @@ public class MqttEntityCatalogTests
                                                or MqttEntityCatalog.LidDischarge
                                                or MqttEntityCatalog.LidDischargePercent
                                                or MqttEntityCatalog.SystemTemperature
-                                               or MqttEntityCatalog.SystemTemperatureMaximum))
+                                               or MqttEntityCatalog.SystemTemperatureMaximum
+                                               or MqttEntityCatalog.LastChange
+                                               or MqttEntityCatalog.LastChangeTime
+                                               or MqttEntityCatalog.LidWait
+                                               or MqttEntityCatalog.LidWaitRemaining
+                                               or MqttEntityCatalog.KeepAwakeHoldRemaining))
                 .Select(e => (e.Platform, e.EntityId)).Order(),
             MqttEntityCatalog.Migrating
                 .Select(m => (m.Component, m.EntityId)).Order());

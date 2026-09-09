@@ -37,7 +37,7 @@ public class MqttCapabilityGateTests
 
     [Fact]
     public void OnHardwareWithNumericThresholds_EveryEntityIsAnnounced() =>
-        Assert.Equal(49, WithCapabilities(PublishCapabilities.Full).Published(null).Count);
+        Assert.Equal(54, WithCapabilities(PublishCapabilities.Full).Published(null).Count);
 
     [Fact]
     public void OnHardwareWithNoChargeLimitInterface_NoSmartChargeEntityIsAnnounced()
@@ -199,6 +199,9 @@ public class MqttCapabilityGateTests
         [
             MqttEntityCatalog.AppVersion, MqttEntityCatalog.StartupDelay,
             MqttEntityCatalog.IconMode, MqttEntityCatalog.DowntimeGap,
+            MqttEntityCatalog.LastChange, MqttEntityCatalog.LastChangeTime,
+            MqttEntityCatalog.LidWait, MqttEntityCatalog.LidWaitRemaining,
+            MqttEntityCatalog.KeepAwakeHoldRemaining,
         ];
 
         Assert.Equal(diagnostics.Order(StringComparer.Ordinal), withheld.Order(StringComparer.Ordinal));
