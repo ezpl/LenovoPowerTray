@@ -9,6 +9,13 @@ application, not what moved in the code. A change carrying no issue collapses in
 line, or is left out. Newest version first; the heading is the version alone, exactly as it appears
 in `ChargeKeeper.csproj`.
 
+## 1.47.0
+
+- The shared components move to their current release: a fault that could end the application while
+  a setting was being changed, or as it exits, is closed, and a build made here can no longer sign
+  the application or its installer without a timestamp, which would otherwise leave the signature
+  unverifiable the day the certificate expires.
+
 ## 1.46.0
 
 - #172 The Keep Awake page now says, in the same words as the Lid delay page, that a running session
