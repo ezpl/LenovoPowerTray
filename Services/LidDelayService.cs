@@ -42,6 +42,12 @@ internal static class LidDelayService
     // _delayPending can no longer answer whether the lid is still shut.
     private static bool   _lidClosed;
 
+    // The value the previous notification carried and the instant it arrived, kept only so the next
+    // one can say whether it changed anything. Nothing de-duplicates against them: a repeat arms a
+    // fresh wait exactly as a transition does, and naming it is what this records.
+    private static bool?           _lastLidPayload;
+    private static DateTimeOffset? _lastNotificationAt;
+
     // A wait whose conditions were met while a keep-awake session held the machine awake. The sleep
     // is owed rather than cancelled: the condition arrived, and only the session stopped it being
     // acted on. Cleared when it is served, when the lid opens, and when the feature goes off.
@@ -588,17 +594,42 @@ internal static class LidDelayService
         NativeMethods.UnregisterLidNotification(registration);
     }
 
-    /// <summary>Lid-switch callback — arrives on an OS thread, so it must not block.</summary>
-    private static void OnLidState(bool closed)
+    /// <summary>
+    /// Lid-switch callback — arrives on an OS thread, so it must not block. Takes the byte Windows
+    /// delivered rather than a reading of it: the trail used to record the conclusion, which is
+    /// indistinguishable from a correct one whatever produced it.
+    /// </summary>
+    /// <remarks>The idle reading is taken first and before anything else, because
+    /// <see cref="LockIfConfigured"/> stops the session tick advancing and the reading would then
+    /// describe the lock rather than the moment the notification arrived.</remarks>
+    private static void OnLidState(byte payload)
     {
+        var sinceInput = NativeMethods.SinceLastInput();
+        var now = DateTimeOffset.Now;
+        bool closed = payload == LidEventLog.ClosedPayload;
+
         LidDelayAction action;
         bool first;
         bool droppedOwedSleep = false;
+        LidEventObservation observation;
         lock (_sync)
         {
             first = !_lidSeeded;
-            _lidSeeded = true;
-            _lidClosed = closed;
+            observation = new LidEventObservation(
+                Payload:            payload,
+                // The replay carries no previous value even where an earlier subscription left one:
+                // it is the state at registration, not a transition from anything.
+                Kind:               LidEventLog.KindOf(closed, first ? null : _lastLidPayload),
+                SincePrevious:      first || _lastNotificationAt is null ? null : now - _lastNotificationAt,
+                SinceInput:         sinceInput,
+                NearOwnSchemeWrite: LidEventLog.WithinTheWindow(NativeMethods.LastSchemeActivatedAt, now),
+                NearDisplayChange:  LidEventLog.DisplayChangedRecently(now),
+                BatteryPercent:     _lastBattery?.Percent,
+                BatteryCharging:    _lastBattery?.Charging);
+            _lastLidPayload     = closed;
+            _lastNotificationAt = now;
+            _lidSeeded          = true;
+            _lidClosed          = closed;
             // Any lid open invalidates a queued suspend, including one already decided on but not yet
             // run — by then _delayPending is false and the policy has nothing left to cancel.
             if (!closed) _generation++;
@@ -611,10 +642,15 @@ internal static class LidDelayService
         }
 
         // Logged whatever the policy decided, replay included: a lid event the feature ignored is
-        // what someone asking "why didn't it sleep" needs to see.
-        PowerLog.Event($"Lid {(closed ? "closed" : "opened")}",
-                       first ? "lid-switch registration replay (initial state, not a real transition)"
-                             : "lid switch");
+        // what someone asking "why didn't it sleep" needs to see. The observation rides on this one
+        // entry rather than lines of its own, so an ordinary day costs nothing.
+        PowerLog.Event(LidEventLog.What(observation), LidEventLog.Cause(observation));
+
+        // The only two lines this adds, and both are silent forever on a machine whose lid behaves.
+        if (LidEventLog.RepeatLine(observation) is { } repeated) PowerLog.Say(repeated);
+        if (LidEventLog.SchemeWriteLine(observation) is { } echoed) PowerLog.Say(echoed);
+
+        LidEventLog.Record(observation, now);
 
         if (droppedOwedSleep) PowerLog.Say(LidWaitTrail.OwedSleepDroppedOnLidOpen);
 

@@ -11,7 +11,7 @@ using Xunit;
 namespace ChargeKeeper.Tests;
 
 /// <summary>
-/// The five readings drawn from a declared list of words, and the words themselves.
+/// The six readings drawn from a declared list of words, and the words themselves.
 /// </summary>
 /// <remarks>
 /// A receiver holds the state of one of these against the list announced with it and rejects
@@ -54,6 +54,19 @@ public class MqttEnumSensorTests
             AppChangeLog.Words);
 
     [Fact]
+    public void TheLastLidEventWords_AreTheOnesAReceiverAlreadyMatchesOn() =>
+        Assert.Equal(
+            [
+                "Closed",
+                "Opened",
+                "Closed again, a repeat",
+                "Opened again, a repeat",
+                "Closed at registration",
+                "Opened at registration",
+            ],
+            LidEventLog.Words);
+
+    [Fact]
     public void ThePowerStateWords_AreTheOnesAReceiverAlreadyMatchesOn() =>
         Assert.Equal(["Discharging", "Charging", "Idle on mains"], PowerStates.Words);
 
@@ -82,6 +95,7 @@ public class MqttEnumSensorTests
     private static IReadOnlyList<string> WordsFor(string entityId) => entityId switch
     {
         MqttEntityCatalog.LastChange    => AppChangeLog.Words,
+        MqttEntityCatalog.LastLidEvent  => LidEventLog.Words,
         MqttEntityCatalog.LidWait       => LidWaitStates.Words,
         MqttEntityCatalog.PowerState    => PowerStates.Words,
         MqttEntityCatalog.BatteryHealth => LiveStateBuilder.HealthWords,
@@ -95,6 +109,7 @@ public class MqttEnumSensorTests
     [InlineData(MqttEntityCatalog.PowerState)]
     [InlineData(MqttEntityCatalog.BatteryHealth)]
     [InlineData(MqttEntityCatalog.BatteryState)]
+    [InlineData(MqttEntityCatalog.LastLidEvent)]
     public void EachEnumSensor_AnnouncesExactlyItsOwnWords(string entityId)
     {
         var entry = Component(entityId);
@@ -113,15 +128,19 @@ public class MqttEnumSensorTests
     [InlineData(MqttEntityCatalog.PowerState)]
     [InlineData(MqttEntityCatalog.BatteryHealth)]
     [InlineData(MqttEntityCatalog.BatteryState)]
+    [InlineData(MqttEntityCatalog.LastLidEvent)]
     public void EachEnumSensor_PublishesAReadingFromItsDeclaredWords(string entityId)
     {
         var declared = Component(entityId).GetProperty("options")
                                           .EnumerateArray().Select(v => v.GetString()!).ToList();
 
-        // The default surface carries no last change, which reads as the reserved literal rather
-        // than a declared word; give it one so every entity under test here reads a genuine word.
+        // The default surface carries neither a last change nor a lid event, and each reads as the
+        // reserved literal rather than a declared word; give it both so every entity under test
+        // here reads a genuine word.
         string? state = MqttTestBed.Build(
-                MqttTestBed.Live(), MqttTestBed.Surface(lastChange: AppChange.LidClosed))
+                MqttTestBed.Live(),
+                MqttTestBed.Surface(lastChange: AppChange.LidClosed,
+                                    lastLidEvent: LidEventKind.Closed))
             .Find(entityId)!.ReadState();
 
         Assert.Contains(state, declared);
@@ -206,10 +225,11 @@ public class MqttEnumSensorTests
     }
 
     [Fact]
-    public void TheTwoLidReadings_GoWithTheRestOfTheLidEntitiesOnAMachineWithNoLid()
+    public void TheLidReadings_GoWithTheRestOfTheLidEntitiesOnAMachineWithNoLid()
     {
-        // They describe a wait only a machine with a lid can have, so the same gate carries them —
-        // even though they are filed under App diagnostics rather than with the lid settings.
+        // They describe a wait, and a notification, only a machine with a lid can have, so the same
+        // gate carries them — even though they are filed under App diagnostics rather than with the
+        // lid settings.
         var published = MqttTestBed.Build(
             MqttTestBed.Live(), MqttTestBed.Surface(),
             PublishCapabilities.Full with { LidClose = false })
@@ -217,6 +237,8 @@ public class MqttEnumSensorTests
 
         Assert.DoesNotContain(MqttEntityCatalog.LidWait, published);
         Assert.DoesNotContain(MqttEntityCatalog.LidWaitRemaining, published);
+        Assert.DoesNotContain(MqttEntityCatalog.LastLidEvent, published);
+        Assert.DoesNotContain(MqttEntityCatalog.LastLidEventTime, published);
         Assert.Contains(MqttEntityCatalog.KeepAwakeHoldRemaining, published);
     }
 

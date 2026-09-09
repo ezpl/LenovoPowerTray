@@ -83,6 +83,8 @@ public class MqttEntityNamingTests
         "chargekeeper_office_x1_downtime_gap",
         "chargekeeper_office_x1_last_change",
         "chargekeeper_office_x1_last_change_time",
+        "chargekeeper_office_x1_last_lid_event",
+        "chargekeeper_office_x1_last_lid_event_time",
         "chargekeeper_office_x1_lid_wait",
         "chargekeeper_office_x1_lid_wait_remaining",
         "chargekeeper_office_x1_keep_awake_hold_remaining",
@@ -237,9 +239,10 @@ public class MqttEntityNamingTests
     [Fact]
     public void TheAppChangeReading_SortsWithTheShorterNameAboveItsOwnLongerOne()
     {
-        // One pair left in Diagnostic: the change above the time it happened at. The two
-        // countdowns (lid-close wait, keep-awake hold) sort in Sensors instead, so the lid-close
-        // wait no longer has a longer sibling to sort above here.
+        // Two pairs in Diagnostic, each a reading above the time it happened at: the change the
+        // application made, and the lid notification it received. The two countdowns (lid-close
+        // wait, keep-awake hold) sort in Sensors instead, so the lid-close wait no longer has a
+        // longer sibling to sort above here.
         var diagnostic = MqttTestBed.Declared().All
             .Where(e => e.Category == MqttEntityCategory.Diagnostic)
             .Select(e => e.Name!)
@@ -253,6 +256,7 @@ public class MqttEntityNamingTests
         Assert.Equal(
             [
                 "App last change", "App last change time",
+                "App last lid event", "App last lid event time",
                 "App lid-close wait",
                 "App version",
             ],

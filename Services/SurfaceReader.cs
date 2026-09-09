@@ -43,7 +43,9 @@ internal readonly record struct SurfaceState(
     int? LidWaitRemainingMinutes,
     int? KeepAwakeRemainingMinutes,
     AppChange? LastChange,
-    DateTimeOffset? LastChangeAt);
+    DateTimeOffset? LastChangeAt,
+    LidEventKind? LastLidEvent,
+    DateTimeOffset? LastLidEventAt);
 
 /// <summary>What the hardware can actually do, from the vendor gates the UI already uses. Announcing
 /// a control the machine cannot honour would leave the receiver with an entity that silently does
@@ -82,9 +84,11 @@ internal static class SurfaceReader
         bool standby = IsStandbyRunning();
         var lidWait = LidDelayService.WaitNow();
         var lastChange = AppChangeLog.Last;
+        var lidEvent = LidEventLog.Last;
+        var lidEventAt = LidEventLog.LastAt;
         var now = DateTimeOffset.Now;
         return SettingsService.Read(s => From(s, session, location, adapter, standby, appVersion,
-                                              lidWait, lastChange, now));
+                                              lidWait, lastChange, lidEvent, lidEventAt, now));
     }
 
     /// <summary>Whole minutes from now to an instant, rounded up and never below zero, or null when
@@ -104,6 +108,7 @@ internal static class SurfaceReader
     internal static SurfaceState From(
         AppSettings s, KeepAwakeSession? session, NetworkLocation location, NetworkAdapterInfo adapter,
         bool standbyRunning, string appVersion, LidWaitSnapshot lidWait, AppChangeRecord? lastChange,
+        LidEventObservation? lidEvent, DateTimeOffset? lidEventAt,
         DateTimeOffset now) => new(
             TravelOverrideActive:   s.TravelOverrideActive,
             KeepAwakeActive:        session is not null,
@@ -141,7 +146,12 @@ internal static class SurfaceReader
             // Absent for a session with no clock expiry — "until turned off" counts down to nothing.
             KeepAwakeRemainingMinutes: MinutesUntil(session?.ExpiresAt, now),
             LastChange:                lastChange?.What,
-            LastChangeAt:              lastChange?.When);
+            LastChangeAt:              lastChange?.When,
+            // The observation, as against the change above it: what the switch reported and whether
+            // it changed anything. The idle reading beside it stays out of the broker — it is a
+            // per-event fact, not a live state, and a continuously moving figure would be noise.
+            LastLidEvent:              lidEvent?.Kind,
+            LastLidEventAt:            lidEventAt);
 
     /// <summary>The vendor capabilities the announcement is gated on.</summary>
     /// <remarks>Deliberately unguarded. A vendor read that fails has to reach the caller as a throw:

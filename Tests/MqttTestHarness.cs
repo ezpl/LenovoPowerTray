@@ -117,7 +117,8 @@ internal static class MqttTestBed
         TrayIconMode iconMode = TrayIconMode.Arc, int downtimeGap = 15,
         LidWaitState lidWait = LidWaitState.Idle, int? lidWaitRemaining = null,
         int? keepAwakeRemaining = null, AppChange? lastChange = null,
-        DateTimeOffset? lastChangeAt = null) =>
+        DateTimeOffset? lastChangeAt = null, LidEventKind? lastLidEvent = null,
+        DateTimeOffset? lastLidEventAt = null) =>
         new(travelOverride, keepAwake, keepAwakeFor, keepAwakeExpires, keepAwakeDisplayOn,
             lidDelay, lidDelayTime, lidDelayMinutes, lidDischarge, lidDischargePercent,
             lidDelayLock, lidDelayOffAfterSleep, lidDelayOffWhenCharging,
@@ -126,7 +127,7 @@ internal static class MqttTestBed
             unknownNetworkPreset ?? PresetEditValidator.UnknownNetworkSentinel,
             networkAlias, networkIp, networkAdapter, matchedProfile, appVersion, startupDelay,
             iconMode, downtimeGap, lidWait, lidWaitRemaining, keepAwakeRemaining,
-            lastChange, lastChangeAt);
+            lastChange, lastChangeAt, lastLidEvent, lastLidEventAt);
 
     /// <summary>A plausible mid-range reading for the two thermal entities, matched to the default
     /// <see cref="PublishCapabilities.Full"/> pattern: a test states only the field it is about, and

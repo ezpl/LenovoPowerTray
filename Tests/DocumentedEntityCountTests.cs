@@ -45,6 +45,8 @@ public class DocumentedEntityCountTests
         [44] = "forty-four",  [45] = "forty-five",  [46] = "forty-six",   [47] = "forty-seven",
         [48] = "forty-eight", [49] = "forty-nine",  [50] = "fifty",       [51] = "fifty-one",
         [52] = "fifty-two",   [53] = "fifty-three", [54] = "fifty-four",  [55] = "fifty-five",
+        [56] = "fifty-six",   [57] = "fifty-seven", [58] = "fifty-eight", [59] = "fifty-nine",
+        [60] = "sixty",
     };
 
     /// <summary>The catalogue's own count, composed the way the publisher composes it.</summary>

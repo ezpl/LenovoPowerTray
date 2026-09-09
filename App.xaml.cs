@@ -342,6 +342,9 @@ public partial class App : Application
         // A lid close, a wait ending and a keep-awake transition all move the surface without
         // touching a setting, so the recorder is the signal for all three.
         AppChangeLog.Recorded               += () => _mqtt?.PublishSurfaceNow();
+        // A lid notification the feature ignored moves neither a setting nor the recorder above, and
+        // an ignored event is exactly the one a receiver correlating a false close needs to see.
+        LidEventLog.Recorded                += () => _mqtt?.PublishSurfaceNow();
         NetworkLocationService.LocationChanged += _ => _mqtt?.PublishSurfaceNow();
     }
 
@@ -1252,6 +1255,9 @@ public partial class App : Application
     /// </summary>
     private void OnDisplaySettingsChanged(object? sender, EventArgs e)
     {
+        // Noted for the lid trail as well as the icon: a dock or a monitor topology change is one of
+        // the things that reaches the lid callback with no lid having moved.
+        LidEventLog.NoteDisplayChange();
         Helpers.IconGenerator.InvalidateSlotSizeCache();
         Helpers.IconGenerator.InvalidateThemeCache();
         ForceIconRefresh();

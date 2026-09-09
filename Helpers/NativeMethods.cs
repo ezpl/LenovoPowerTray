@@ -40,6 +40,39 @@ internal static class NativeMethods
         catch { return null; }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LASTINPUTINFO
+    {
+        public uint cbSize;
+        public uint dwTime;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+
+    /// <summary>
+    /// How long since keyboard or mouse input last reached THIS session. Null when the query fails,
+    /// which callers must not read as zero.
+    /// </summary>
+    /// <remarks>
+    /// The tick is 32-bit and wraps at about 49.7 days of uptime, so the subtraction is unsigned and
+    /// wraps with it. The reading sees only the calling session, so a small figure is proof that
+    /// somebody was at the machine and a large one is weak evidence of the opposite: input on the
+    /// secure desktop, in another session, or over some remote paths never reaches it. Locking the
+    /// workstation stops the tick advancing, so this must be read before any lock.
+    /// </remarks>
+    internal static TimeSpan? SinceLastInput()
+    {
+        try
+        {
+            var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+            if (!GetLastInputInfo(ref info)) return null;
+            return TimeSpan.FromMilliseconds(unchecked((uint)Environment.TickCount - info.dwTime));
+        }
+        catch { return null; }
+    }
+
     // SetThreadExecutionState cannot hold off a lid-close sleep: lid close is a power-policy action,
     // not an idle timeout. Delaying it means overriding the user's LIDACTION to "do nothing" and
     // putting it back afterwards.
@@ -225,20 +258,30 @@ internal static class NativeMethods
             var s = scheme; var sub = GUID_SUB_BUTTONS; var setting = GUID_LIDACTION;
             if (PowerWriteACValueIndex(IntPtr.Zero, ref s, ref sub, ref setting, ac) != 0) return false;
             if (PowerWriteDCValueIndex(IntPtr.Zero, ref s, ref sub, ref setting, dc) != 0) return false;
+            // Marked before the call rather than after it: a re-delivery this write provokes can
+            // reach the lid callback while PowerSetActiveScheme is still running.
+            LastSchemeActivatedAt = DateTimeOffset.Now;
             return PowerSetActiveScheme(IntPtr.Zero, activeRaw) == 0;
         }, false);
 
+    /// <summary>When this process last re-activated the power scheme, or null when it never has.
+    /// Every settings reload reaches that write while a lid subscription is live, so a lid
+    /// notification landing beside one may be the write's own echo rather than a lid moving.</summary>
+    internal static DateTimeOffset? LastSchemeActivatedAt { get; private set; }
+
     /// <summary>
-    /// Subscribes to lid open/close, invoking <paramref name="onLidState"/> with true when the lid is
-    /// CLOSED. Returns a registration handle for <see cref="UnregisterLidNotification"/>, or
-    /// IntPtr.Zero if the subscription failed.
+    /// Subscribes to lid open/close, invoking <paramref name="onLidState"/> with the byte Windows
+    /// delivered — 0 closed, 1 open. The raw value is passed rather than a reading of it: what
+    /// arrived is the observation, and a trail holding only the conclusion cannot be used to tell a
+    /// real close from a false one. Returns a registration handle for
+    /// <see cref="UnregisterLidNotification"/>, or IntPtr.Zero if the subscription failed.
     /// <para>Windows invokes the callback once immediately with the current lid state, before any
     /// real transition — the caller must treat that first reading as a seed, not as a lid close.</para>
     /// <para>One subscription at a time: a second call is refused rather than overwriting
     /// <see cref="_lidCallback"/>, which would unroot the live delegate while the OS still holds its
     /// raw thunk.</para>
     /// </summary>
-    internal static IntPtr RegisterLidNotification(Action<bool> onLidState)
+    internal static IntPtr RegisterLidNotification(Action<byte> onLidState)
     {
         if (_lidCallback is not null) return IntPtr.Zero;
         try
@@ -249,7 +292,7 @@ internal static class NativeMethods
                 {
                     var s = Marshal.PtrToStructure<POWERBROADCAST_SETTING>(setting);
                     if (s.PowerSetting == GUID_LIDSWITCH_STATE_CHANGE && s.DataLength >= 1)
-                        onLidState(s.Data == 0);   // 0 = closed, 1 = open
+                        onLidState(s.Data);   // 0 = closed, 1 = open
                 }
                 return 0;   // ERROR_SUCCESS
             };

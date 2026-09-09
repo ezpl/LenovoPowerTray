@@ -36,7 +36,7 @@ internal sealed record MqttEntitySources
 }
 
 /// <summary>
-/// ChargeKeeper's published surface: fifty-four entities, their groups, their capability gates and
+/// ChargeKeeper's published surface: fifty-six entities, their groups, their capability gates and
 /// the domain seam each inbound command lands on. Pure — nothing here touches a broker or a settings
 /// singleton, so the same table composes in a test.
 /// </summary>
@@ -106,6 +106,8 @@ internal static class MqttEntityCatalog
 
     public const string LastChange             = "last_change";
     public const string LastChangeTime         = "last_change_time";
+    public const string LastLidEvent           = "last_lid_event";
+    public const string LastLidEventTime       = "last_lid_event_time";
     public const string LidWait                = "lid_wait";
     public const string LidWaitRemaining       = "lid_wait_remaining";
     public const string KeepAwakeHoldRemaining = "keep_awake_hold_remaining";
@@ -673,7 +675,7 @@ internal static class MqttEntityCatalog
                 Apply = value => MqttCommandVerdict.Accept(() => set.SetDowntimeGap(Whole(value))),
             },
 
-            // What the application itself is doing, as against the settings above. Five readings,
+            // What the application itself is doing, and what the platform told it. Seven readings,
             // no commands: a receiver watches them, and every one of them moves on its own.
             MqttEnumSensor.Of(
                 LastChange, "App last change", MqttPublishGroups.AppDiagnostics,
@@ -689,6 +691,26 @@ internal static class MqttEntityCatalog
                 // A timestamp sensor wants a full ISO 8601 instant with an offset; nothing recorded
                 // this session means no value at all.
                 Read = () => surface()?.LastChangeAt?.ToString("o", CultureInfo.InvariantCulture),
+            },
+
+            // The lid event as an observation, as against the change it produced. A receiver keeps
+            // history at a resolution the log has to be trawled for, and correlates it against a
+            // dock, a monitor or a person at a keyboard on its own. Only what the switch reported
+            // reaches the broker; the idle reading beside it is a per-event fact, not a live state.
+            MqttEnumSensor.Of(
+                LastLidEvent, "App last lid event", MqttPublishGroups.AppDiagnostics,
+                MqttEntityCategory.Diagnostic, "mdi:laptop-off",
+                LidEventLog.Words,
+                () => surface()?.LastLidEvent is { } kind ? LidEventLog.Label(kind) : null,
+                () => s.Capabilities().LidClose),
+            new MqttSensor
+            {
+                // Sorts immediately below the event it timestamps, whose name it extends.
+                EntityId = LastLidEventTime, Name = "App last lid event time",
+                Group = MqttPublishGroups.AppDiagnostics,
+                Category = MqttEntityCategory.Diagnostic, DeviceClass = "timestamp",
+                Include = () => s.Capabilities().LidClose,
+                Read = () => surface()?.LastLidEventAt?.ToString("o", CultureInfo.InvariantCulture),
             },
             MqttEnumSensor.Of(
                 LidWait, "App lid-close wait", MqttPublishGroups.AppDiagnostics,
