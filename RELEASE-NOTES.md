@@ -9,6 +9,29 @@ application, not what moved in the code. A change carrying no issue collapses in
 line, or is left out. Newest version first; the heading is the version alone, exactly as it appears
 in `ChargeKeeper.csproj`.
 
+## 1.46.0
+
+- #172 The Keep Awake page now says, in the same words as the Lid delay page, that a running session
+  stops a lid close from sleeping the computer.
+- #174 The Keep Awake page now also says when Windows will sleep the computer once a session ends and
+  nothing else is holding it awake: after a stated period of no use, on mains or on battery, given as
+  a floor rather than a countdown, since another application's own hold can push the moment out.
+- #173 A lid-close sleep held back by a running keep-awake session is no longer lost. It is served the
+  moment the session ends, if the lid is still shut, instead of leaving the computer awake with the
+  lid closed until Windows' own idle timeout — five hours on mains, measured on one machine.
+- #170 On a computer that sleeps by Modern Standby, the Lid delay page now says that Windows can enter
+  standby on its own idle rules while a wait runs. This states the gap rather than closing it: such a
+  machine can still fall asleep mid-wait, and the issue stays open.
+- #175 The log now records what the lid switch actually reported and how long since the keyboard or
+  mouse was last touched, so a lid close logged while someone is plainly still typing can be told
+  apart from a real one. Two new Home Assistant readings show the last such event and when it arrived,
+  joining five more that report what the application itself is doing: what last changed and when,
+  what the lid-close wait is currently on, and countdowns for the lid sleep and the keep-awake hold,
+  the two countdowns sorted into the main Sensors section alongside the battery readings. Battery
+  state, battery health and battery power state are now closed lists of words rather than free text,
+  and the network-profile reading says "No profile matched" instead of a word that also meant no
+  reading had arrived.
+
 ## 1.45.0
 
 - #170 The power log now says what a lid-close wait actually did. It records whether the computer
