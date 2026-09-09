@@ -12,7 +12,7 @@ namespace ChargeKeeper.Tests;
 public class LidWaitInstrumentationTests
 {
     private static string LidSource()   => File.ReadAllText(RepoFiles.Find("Services/LidDelayService.cs"));
-    private static string KeepSource()  => File.ReadAllText(RepoFiles.Find("Services/KeepAwakeService.cs"));
+    private static string HolderSource()=> File.ReadAllText(RepoFiles.Find("Services/ExecutionStateHolder.cs"));
     private static string AppSource()   => File.ReadAllText(RepoFiles.Find("App.xaml.cs"));
     private static string NativeSource()=> File.ReadAllText(RepoFiles.Find("Helpers/NativeMethods.cs"));
 
@@ -62,20 +62,16 @@ public class LidWaitInstrumentationTests
         Assert.Equal(expected, ExecutionStateHold.Outcome(previous));
 
     [Fact]
-    public void BothFeaturesRecordWhatWindowsMadeOfTheirHold()
+    public void BothFeaturesShareOneHolderThatRecordsWhatWindowsMadeOfTheHold()
     {
-        // The two use the same primitive on separate threads, so a refusal that only one of them
-        // reports leaves the other looking like it is holding the machine awake when it is not.
-        foreach (string body in new[]
-                 {
-                     SourceMethods.Body(LidSource(),  "HolderLoop"),
-                     SourceMethods.Body(KeepSource(), "HolderLoop"),
-                 })
-        {
-            Assert.Contains("uint previous = NativeMethods.SetThreadExecutionState(flags)",
-                            body, StringComparison.Ordinal);
-            Assert.Contains("ExecutionStateHold.Outcome(previous)", body, StringComparison.Ordinal);
-        }
+        // #171 extracted the two near-copies into one holder loop, shared by both services, so a
+        // refusal is now impossible to lose from one side alone by construction rather than by
+        // convention.
+        string body = SourceMethods.Body(HolderSource(), "Loop");
+
+        Assert.Contains("uint previous = NativeMethods.SetThreadExecutionState(flags)",
+                        body, StringComparison.Ordinal);
+        Assert.Contains("ExecutionStateHold.Outcome(previous)", body, StringComparison.Ordinal);
     }
 
     // ---- which conditions armed, positively and negatively -------------------------------------

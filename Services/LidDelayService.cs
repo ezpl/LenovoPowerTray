@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using ChargeKeeper.Helpers;
+﻿using ChargeKeeper.Helpers;
 
 namespace ChargeKeeper.Services;
 
@@ -15,8 +14,10 @@ namespace ChargeKeeper.Services;
 /// BEFORE the scheme is written and are never re-captured while stored, or a crash strands the laptop
 /// on "do nothing" — which Windows hides from Settings on Modern Standby machines. Lid actions are
 /// per-scheme, so the scheme is stored with them and every write targets it explicitly. The OS hold
-/// uses its own holder thread rather than <see cref="KeepAwakeService"/>'s single current session,
-/// which borrowing would cancel.
+/// runs on its own <see cref="ExecutionStateHolder"/> instance: the holder thread is a class shared
+/// with <see cref="KeepAwakeService"/>, but each service owns the session running on it, and
+/// borrowing <see cref="KeepAwakeService"/>'s running session — rather than merely its thread type —
+/// is what a hand-off or a network change would cancel.
 /// </remarks>
 internal static class LidDelayService
 {
@@ -78,8 +79,8 @@ internal static class LidDelayService
     // settings.json while it is set — see OnSettingsReloaded.
     private static (Guid Scheme, uint Ac, uint Dc)? _appliedOverride;
 
-    private static readonly BlockingCollection<uint> _holdRequests = new();
-    private static Thread? _holder;
+    private static readonly ExecutionStateHolder _holder = new("LidDelay", "lid-close delay",
+        _ => "OS keep-awake hold taken", $"{nameof(LidDelayService)}.SetThreadExecutionState");
 
     private static bool _started;
 
@@ -665,7 +666,7 @@ internal static class LidDelayService
             // close notifications can both have been told to start, and the second would restart
             // the countdown.
             if (_delayPending) return;
-            EnsureHolder();
+            _holder.EnsureStarted();
             _delayPending  = true;
             _timeArrived   = false;
             _targetArrived = false;
@@ -714,7 +715,7 @@ internal static class LidDelayService
                            : null;
             if (thermalCeiling is { } ceiling) _thermal.Arm(ceiling);
 
-            _holdRequests.Add(NativeMethods.ES_CONTINUOUS | NativeMethods.ES_SYSTEM_REQUIRED);
+            _holder.Post(NativeMethods.ES_CONTINUOUS | NativeMethods.ES_SYSTEM_REQUIRED);
             _timer?.Dispose();
             _timer = null;
             armedTimer = _timeSet;
@@ -918,34 +919,6 @@ internal static class LidDelayService
         _heartbeat?.Dispose();
         _heartbeat = null;
         // Clearing must happen on the thread that made the request — post it, don't call it here.
-        if (_holder is not null) _holdRequests.Add(NativeMethods.ES_CONTINUOUS);
-    }
-
-    private static void EnsureHolder()
-    {
-        if (_holder is not null) return;
-        // Background thread: process exit tears it down, which releases the execution state anyway.
-        _holder = new Thread(HolderLoop) { IsBackground = true, Name = "LidDelay" };
-        _holder.Start();
-    }
-
-    private static void HolderLoop()
-    {
-        foreach (uint flags in _holdRequests.GetConsumingEnumerable())
-        {
-            try
-            {
-                // The return value is the thread's previous state, or zero when the call failed. A
-                // refusal recorded as nothing is a wait that looks held while the machine is free
-                // to sleep, so the outcome is named on every take and every release.
-                uint previous = NativeMethods.SetThreadExecutionState(flags);
-                // Logged here, not at the request sites: this is when the OS learns about the hold.
-                PowerLog.Event(flags == NativeMethods.ES_CONTINUOUS
-                                   ? "OS keep-awake hold released"
-                                   : "OS keep-awake hold taken",
-                               $"lid-close delay; {ExecutionStateHold.Outcome(previous)}");
-            }
-            catch (Exception ex) { AppLog.Error("LidDelayService.SetThreadExecutionState", ex); }
-        }
+        if (_holder.IsStarted) _holder.Post(NativeMethods.ES_CONTINUOUS);
     }
 }

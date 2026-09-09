@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using ChargeKeeper.Helpers;
 
 namespace ChargeKeeper.Services;
@@ -22,9 +21,8 @@ internal static class KeepAwakeService
     private static KeepAwakeSession? _current;
     private static System.Threading.Timer? _expiryTimer;
 
-    // The holder thread and its request queue; each item is the esFlags value to apply.
-    private static readonly BlockingCollection<uint> _holdRequests = new();
-    private static Thread? _holder;
+    private static readonly ExecutionStateHolder _holder = new("KeepAwake", "keep-awake session",
+        DescribeTaken, $"{nameof(KeepAwakeService)}.SetThreadExecutionState");
     // The flags last posted, so a settings change that leaves them alone costs nothing.
     private static uint _postedFlags;
 
@@ -60,7 +58,7 @@ internal static class KeepAwakeService
     {
         lock (_sync)
         {
-            if (_current is null || _holder is null) return;
+            if (_current is null || !_holder.IsStarted) return;
             uint flags = HoldFlags();
             if (flags == _postedFlags) return;
             PostLocked(flags);
@@ -78,7 +76,7 @@ internal static class KeepAwakeService
         var session = new KeepAwakeSession(request, now, KeepAwakePolicy.ExpiryFor(request, now));
         lock (_sync)
         {
-            EnsureHolder();
+            _holder.EnsureStarted();
             _current = session;
             PostLocked(HoldFlags());
             ArmExpiry(session, now);
@@ -149,37 +147,11 @@ internal static class KeepAwakeService
     private static void PostLocked(uint flags)
     {
         _postedFlags = flags;
-        _holdRequests.Add(flags);
+        _holder.Post(flags);
     }
 
-    private static void EnsureHolder()
-    {
-        if (_holder is not null) return;
-        // Background thread: process exit tears it down, which releases the execution state anyway.
-        _holder = new Thread(HolderLoop) { IsBackground = true, Name = "KeepAwake" };
-        _holder.Start();
-    }
-
-    private static void HolderLoop()
-    {
-        foreach (uint flags in _holdRequests.GetConsumingEnumerable())
-        {
-            try
-            {
-                // The return value is the thread's previous state, or zero when the call failed. A
-                // refusal recorded as nothing is a session that looks like it is holding the machine
-                // awake while nothing is, so the outcome is named on every take and every release.
-                uint previous = NativeMethods.SetThreadExecutionState(flags);
-                // Logged here, not at the request sites: this is when the OS learns about the hold.
-                PowerLog.Event(
-                    flags == NativeMethods.ES_CONTINUOUS
-                        ? "OS keep-awake hold released"
-                        : $"OS keep-awake hold taken, display {((flags & NativeMethods.ES_DISPLAY_REQUIRED) != 0 ? "held on" : "free to sleep")}",
-                    $"keep-awake session; {ExecutionStateHold.Outcome(previous)}");
-            }
-            catch (Exception ex) { AppLog.Error("KeepAwakeService.SetThreadExecutionState", ex); }
-        }
-    }
+    private static string DescribeTaken(uint flags) =>
+        $"OS keep-awake hold taken, display {((flags & NativeMethods.ES_DISPLAY_REQUIRED) != 0 ? "held on" : "free to sleep")}";
 
     // Callers hold _sync.
     private static void ArmExpiry(KeepAwakeSession session, DateTimeOffset now)
@@ -225,6 +197,6 @@ internal static class KeepAwakeService
         _expiryTimer?.Dispose();
         _expiryTimer = null;
         // Clearing must happen on the thread that made the request — post it, don't call it here.
-        if (_holder is not null) PostLocked(NativeMethods.ES_CONTINUOUS);
+        if (_holder.IsStarted) PostLocked(NativeMethods.ES_CONTINUOUS);
     }
 }
