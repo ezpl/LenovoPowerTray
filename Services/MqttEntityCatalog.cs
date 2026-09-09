@@ -239,13 +239,15 @@ internal static class MqttEntityCatalog
             },
             new MqttBinarySensor
             {
-                EntityId = IsCharging, Name = "Is charging", Group = MqttPublishGroups.BatteryStatus,
+                // Carries the group word: Sensors now also holds the two App countdowns, so a
+                // Battery reading needs the prefix to cluster with its own group there.
+                EntityId = IsCharging, Name = "Battery is charging", Group = MqttPublishGroups.BatteryStatus,
                 DeviceClass = "battery_charging",
                 Read = () => live()?.IsCharging,
             },
             new MqttBinarySensor
             {
-                EntityId = OnAc, Name = "On AC", Group = MqttPublishGroups.BatteryStatus,
+                EntityId = OnAc, Name = "Battery on AC", Group = MqttPublishGroups.BatteryStatus,
                 DeviceClass = "plug",
                 Read = () => live()?.OnAc,
             },
@@ -698,10 +700,13 @@ internal static class MqttEntityCatalog
             new MqttSensor
             {
                 // The wait's own clock, not the setting: absent whenever no timer is running, so a
-                // machine sitting at rest reports nothing rather than a countdown of zero.
-                EntityId = LidWaitRemaining, Name = "App lid-close wait remaining",
+                // machine sitting at rest reports nothing rather than a countdown of zero. A
+                // countdown, not the state it belongs to: it sorts in Sensors, apart from the
+                // Diagnostic "App lid-close wait" above, so its name carries "lid-close wait" in
+                // full rather than trailing off with a bare "remaining".
+                EntityId = LidWaitRemaining, Name = "App lid-close wait countdown",
                 Group = MqttPublishGroups.AppDiagnostics,
-                Category = MqttEntityCategory.Diagnostic, DeviceClass = "duration", Unit = "min",
+                Category = MqttEntityCategory.Primary, DeviceClass = "duration", Unit = "min",
                 Icon = "mdi:timer-sand",
                 Include = () => s.Capabilities().LidClose,
                 Read = () => MqttPayload.Number((long?)surface()?.LidWaitRemainingMinutes),
@@ -710,10 +715,11 @@ internal static class MqttEntityCatalog
             {
                 // Kept apart from the lid countdown above: releasing the hold is not the same event
                 // as sleeping the machine, and a session with no clock expiry counts down to
-                // nothing at all.
-                EntityId = KeepAwakeHoldRemaining, Name = "App keep-awake hold remaining",
+                // nothing at all. Sorts in Sensors rather than Diagnostic, so the name spells out
+                // "keep-awake hold" itself instead of relying on a neighbouring entity for context.
+                EntityId = KeepAwakeHoldRemaining, Name = "App keep-awake hold countdown",
                 Group = MqttPublishGroups.AppDiagnostics,
-                Category = MqttEntityCategory.Diagnostic, DeviceClass = "duration", Unit = "min",
+                Category = MqttEntityCategory.Primary, DeviceClass = "duration", Unit = "min",
                 Icon = "mdi:coffee-outline",
                 Read = () => MqttPayload.Number((long?)surface()?.KeepAwakeRemainingMinutes),
             },

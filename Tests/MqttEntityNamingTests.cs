@@ -126,15 +126,14 @@ public class MqttEntityNamingTests
 
     private static readonly GroupWord[] _policy =
     [
-        // The Sensors section holds nothing but Battery status, so a prefix earns no grouping there
-        // and the two uncategorised readings keep their plain names. The adapter rating belongs to
-        // the mains adapter and Energy Saver is an operating-system mode, so neither reads
-        // correctly as a battery reading — and the two thermal readings describe the machine the
-        // battery sits in, not the battery itself, per issue #157's own measurement notes.
+        // The adapter rating belongs to the mains adapter and Energy Saver is an operating-system
+        // mode, so neither reads correctly as a battery reading — and the two thermal readings
+        // describe the machine the battery sits in, not the battery itself, per issue #157's own
+        // measurement notes.
         new()
         {
             Group = MqttPublishGroups.BatteryStatus, Word = "Battery",
-            Exceptions = ["Is charging", "On AC", "Adapter rating", "Low power mode",
+            Exceptions = ["Adapter rating", "Low power mode",
                           "System temperature", "System temperature maximum"],
         },
 
@@ -236,10 +235,11 @@ public class MqttEntityNamingTests
     }
 
     [Fact]
-    public void EachAppDiagnosticReading_SortsWithTheShorterNameAboveItsOwnLongerOne()
+    public void TheAppChangeReading_SortsWithTheShorterNameAboveItsOwnLongerOne()
     {
-        // Two pairs, and each pair's shorter name is a prefix of its longer one: the change above
-        // the time it happened at, and the lid-close wait above what is left of it.
+        // One pair left in Diagnostic: the change above the time it happened at. The two
+        // countdowns (lid-close wait, keep-awake hold) sort in Sensors instead, so the lid-close
+        // wait no longer has a longer sibling to sort above here.
         var diagnostic = MqttTestBed.Declared().All
             .Where(e => e.Category == MqttEntityCategory.Diagnostic)
             .Select(e => e.Name!)
@@ -252,14 +252,29 @@ public class MqttEntityNamingTests
 
         Assert.Equal(
             [
-                "App keep-awake hold remaining",
                 "App last change", "App last change time",
-                "App lid-close wait", "App lid-close wait remaining",
+                "App lid-close wait",
                 "App version",
             ],
             block);
 
         // Contiguous: nothing from another group sorts into the middle of the run.
         Assert.Equal(block, diagnostic.Skip(diagnostic.IndexOf(block[0])).Take(block.Count));
+    }
+
+    [Fact]
+    public void TheTwoCountdowns_AreTheOnlyAppEntitiesInSensors()
+    {
+        // The category move this test guards: only the two countdowns left Diagnostic, and each
+        // carries its own subject in full ("lid-close wait", "keep-awake hold") rather than a bare
+        // "remaining" that depended on sorting next to a shorter sibling.
+        var primary = MqttTestBed.Declared().All
+            .Where(e => e.Group == MqttPublishGroups.AppDiagnostics
+                     && e.Category == MqttEntityCategory.Primary)
+            .Select(e => e.Name!)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["App keep-awake hold countdown", "App lid-close wait countdown"], primary);
     }
 }
